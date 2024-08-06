@@ -269,6 +269,7 @@ while true; do
       remove_tunnel "$tunnel_name"
       ;;
     5)
+      list_tunnels
       read -p "Enter the name of the tunnel to make permanent: " tunnel_name
       if ! interface_exists "$tunnel_name"; then
         print_color "31" "Tunnel $tunnel_name does not exist."
