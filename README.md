@@ -1,3 +1,43 @@
+# اسکریپت مدیریت تونل
+
+این اسکریپت قابلیت‌های مدیریت تونل‌های 6to4 را در سیستم‌های لینوکس فراهم می‌کند. این اسکریپت از ایجاد، لیست کردن و حذف تونل‌ها پشتیبانی می‌کند و همچنین پیکربندی تونل‌ها را دائمی کرده و سرویس `rc-local` را برای راه‌اندازی سیستم پیکربندی می‌کند.
+
+## ویژگی‌ها
+
+- **ایجاد تونل**: افزودن تونل جدید 6to4 با آدرس‌های IPv4 و IPv6 مشخص.
+- **لیست تونل‌ها**: نمایش تمام تونل‌های فعال 6to4.
+- **حذف تونل**: حذف تونل موجود.
+- **دائمی کردن پیکربندی**: ذخیره پیکربندی تونل در `/etc/rc.local` برای پایداری در هنگام راه‌اندازی مجدد.
+- **پیکربندی سرویس `rc-local`**: راه‌اندازی یا پیکربندی سرویس `rc-local` برای اطمینان از اجرای `/etc/rc.local` در هنگام راه‌اندازی سیستم.
+
+## پیش‌نیازها
+
+- سیستم لینوکس با نصب ابزارهای `bash`، `ip` و `systemctl`.
+- دسترسی ریشه برای تغییر `/etc/rc.local` و ایجاد سرویس‌های systemd.
+
+## استفاده
+
+1. **اجرای اسکریپت به‌طور مستقیم**
+
+   برای دانلود و اجرای اسکریپت، دستور زیر را اجرا کنید:
+
+   ```bash
+   bash <(curl -H 'Cache-Control: no-cache' -sSL "https://raw.githubusercontent.com/im-api/6to4/main/6to4.sh?$(date +%s)" --ipv4)
+گزینه‌های منو
+
+1. ایران: ایجاد تونل جدید با تنظیمات پیش‌فرض برای ایران.
+2. خارج: ایجاد تونل جدید با تنظیمات سفارشی برای نام منحصر به فرد.
+3. لیست تونل‌ها: نمایش لیستی از تمام تونل‌های فعال.
+4. حذف تونل: حذف یک تونل موجود.
+5. دائمی کردن تونل: ذخیره پیکربندی تونل در /etc/rc.local.
+6. پیکربندی سرویس rc-local: ایجاد یا پیکربندی سرویس rc-local برای راه‌اندازی سیستم.
+7. خروج: خروج از اسکریپت.
+یادداشت‌ها
+اطمینان حاصل کنید که فایل /etc/rc.local اجرایی است. اسکریپت سعی خواهد کرد آن را ایجاد و پیکربندی کند اگر وجود نداشته باشد.
+سرویس rc-local باید فعال و راه‌اندازی شود تا تغییرات در /etc/rc.local در هنگام راه‌اندازی سیستم اعمال شود.
+مجوز
+این اسکریپت تحت مجوز MIT ارائه شده است. برای جزئیات، به فایل LICENSE مراجعه کنید.
+
 # Tunnel Management Script
 
 This script provides functionality to manage 6to4 tunnels on a Linux system. It supports creating, listing, and removing tunnels, as well as making tunnel configurations permanent and configuring the `rc-local` service for system startup.
@@ -32,16 +72,7 @@ Menu Options
 5. Make tunnel permanent: Save tunnel configuration to /etc/rc.local.
 6. Configure rc-local service: Create or configure the rc-local service for system startup.
 7. Exit: Exit the script.
-Script Functions
-interface_exists(): Checks if a network interface exists.
-print_color(): Prints messages in specified colors.
-ensure_rc_local_format(): Ensures /etc/rc.local has correct shebang, sleep 10 delay, and exit 0.
-make_permanent(): Adds tunnel configuration to /etc/rc.local.
-remove_tunnel(): Deletes a tunnel and removes its configuration from /etc/rc.local.
-list_tunnels(): Lists all active 6to4 tunnels.
-configure_rc_local_service(): Sets up or reconfigures the rc-local service.
-Notes
-Ensure the /etc/rc.local file is executable. The script will attempt to create and configure it if it does not exist.
-The rc-local service needs to be enabled and started for /etc/rc.local changes to take effect at boot.
-License
+
+
+
 This script is provided under the MIT License.
