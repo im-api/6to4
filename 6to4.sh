@@ -51,7 +51,7 @@ make_permanent() {
 # Function to list all 6to4 tunnels
 list_tunnels() {
   print_color "$COLOR_BLUE" "Listing all 6to4 tunnels:"
-  ip -o link show | grep -E '6to4' | awk -F': ' '{print $2}'
+  ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
 }
 
 # Function to remove a tunnel
