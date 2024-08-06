@@ -265,19 +265,9 @@ while true; do
       list_tunnels
       ;;
     4)
-      tunnels=$(list_tunnels)
-      if [ -z "$tunnels" ]; then
-        print_color "31" "No tunnels found."
-      else
-        print_color "34" "Available tunnels:"
-        echo "$tunnels"
-        read -p "Enter the name of the tunnel to remove: " tunnel_name
-        if ! interface_exists "$tunnel_name"; then
-          print_color "31" "Tunnel $tunnel_name does not exist."
-          continue
-        fi
-        remove_tunnel "$tunnel_name"
-        ;;
+      read -p "Enter the name of the tunnel to remove: " tunnel_name
+      remove_tunnel "$tunnel_name"
+      ;;
     5)
       tunnels=$(list_tunnels)
       if [ -z "$tunnels" ]; then
