@@ -69,9 +69,6 @@ EOF
 
   # Re-check format after modifications
   ensure_rc_local_format
-
-  # Configure the rc-local service
-  configure_rc_local_service
 }
 
 # Function to create and configure rc-local service
