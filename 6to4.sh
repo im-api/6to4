@@ -59,6 +59,9 @@ EOF
   # Remove existing configuration for the interface from /etc/rc.local
   sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
 
+  # Remove existing exit 0 if present
+  sudo sed -i '/^exit 0$/d' "$rc_local"
+
   # Append new configuration before `exit 0`
   local tmp_rc_local=$(mktemp)
   awk '/^exit 0$/{print FILENAME " configured before exit 0"; exit 0}' "$rc_local" > "$tmp_rc_local"
