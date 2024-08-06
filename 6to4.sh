@@ -11,6 +11,24 @@ print_color() {
   local message="$2"
   echo -e "\e[${color}m${message}\e[0m"
 }
+ensure_rc_local_format() {
+  local rc_local="/etc/rc.local"
+
+  # Ensure shebang is at the top
+  if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
+    print_color "31" "Adding shebang to $rc_local."
+    sudo bash -c "echo '#!/bin/bash' > $rc_local"
+  fi
+
+  # Ensure exit 0 is at the end
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+    print_color "31" "Appending exit 0 to $rc_local."
+    echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
+  fi
+
+  # Make sure the file is executable
+  sudo chmod +x "$rc_local"
+}
 
 # Function to ensure /etc/rc.local has correct shebang and exit 0
 make_permanent() {
