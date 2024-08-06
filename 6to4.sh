@@ -62,14 +62,13 @@ EOF
   while IFS= read -r line; do
     if [[ "$line" == "# Tunnel setup for $interface" ]]; then
       echo "$setup_cmds" >> "$tmp_rc_local"
-      # Skip the next lines to avoid duplication
+      # Skip the next lines until `exit 0` is found
       replaced=1
       while IFS= read -r line && [[ "$line" != "exit 0" ]]; do
         # Skip lines until `exit 0` is found
         :
       done
-      # Continue to read and write lines from original file
-      echo "exit 0" >> "$tmp_rc_local"
+      # Continue to read and write lines from the original file
     else
       echo "$line" >> "$tmp_rc_local"
     fi
@@ -79,9 +78,11 @@ EOF
   if [ "$replaced" -eq 0 ]; then
     echo "# Tunnel setup for $interface" >> "$tmp_rc_local"
     echo "$setup_cmds" >> "$tmp_rc_local"
-    if ! grep -q '^exit 0$' "$rc_local"; then
-      echo "exit 0" >> "$tmp_rc_local"
-    fi
+  fi
+
+  # Ensure that `exit 0` is present only at the end of the file
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0$'; then
+    echo "exit 0" >> "$tmp_rc_local"
   fi
 
   # Replace original /etc/rc.local with updated content
