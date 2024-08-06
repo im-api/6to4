@@ -40,15 +40,18 @@ create_tunnel_script() {
 make_permanent() {
   local interface="$1"
 
-  # Get tunnel details
-  local local_ip=$(ip -o addr show dev "$interface" | awk '/inet / {print $4}' | cut -d'/' -f1)
-  local remote_ip=$(ip tunnel show "$interface" | awk '{print $3}')
+  # Extract the local IP address from the link section
+  local local_ip=$(ip addr show dev "$interface" | awk '/link\/sit/ {print $2}' | cut -d' ' -f1)
+
+  # Extract the remote IP address from the link section
+  local remote_ip=$(ip addr show dev "$interface" | awk '/link\/sit/ {print $3}' | cut -d' ' -f1)
+
+  # Extract the IPv6 address
   local ipv6_address=$(ip -6 addr show dev "$interface" | awk '/inet6 / {print $2}' | cut -d'/' -f1)
 
   # Validate retrieved values
   if [ -z "$local_ip" ]; then
-    print_color "$COLOR_RED" "No IPv4 address found for the interface $interface. Permanent configuration requires an IPv4 address."
-    return 1
+    print_color "$COLOR_YELLOW" "No IPv4 address found for the interface $interface. Proceeding with IPv6-only configuration."
   fi
 
   if [ -z "$remote_ip" ]; then
