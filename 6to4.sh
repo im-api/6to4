@@ -269,19 +269,22 @@ while true; do
       remove_tunnel "$tunnel_name"
       ;; 
     5)
+      # List tunnels before asking for tunnel name
       tunnels=$(list_tunnels)
       if [ -z "$tunnels" ]; then
         print_color "31" "No tunnels found."
         continue
-      else
-        print_color "34" "Available tunnels:"
-        echo "$tunnels"
-        read -p "Enter the name of the tunnel to make permanent: " tunnel_name
-        
+      fi
+
+      print_color "34" "Available tunnels:"
+      echo "$tunnels"
+      read -p "Enter the name of the tunnel to make permanent: " tunnel_name
+
       if ! interface_exists "$tunnel_name"; then
         print_color "31" "Tunnel $tunnel_name does not exist."
         continue
       fi
+
       # Retrieve existing tunnel details
       remote_ip=$(ip tunnel show "$tunnel_name" | grep 'remote' | awk '{print $2}')
       local_ip=$(ip tunnel show "$tunnel_name" | grep 'local' | awk '{print $2}')
@@ -294,6 +297,7 @@ while true; do
 
       make_permanent "$tunnel_name" "$remote_ip" "$local_ip" "$ipv6_address"
       ;;
+
     6)
       configure_rc_local_service
       ;;
