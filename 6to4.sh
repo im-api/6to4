@@ -15,6 +15,11 @@ print_color() {
 # Function to make configuration permanent using rc.local
 make_permanent() {
   local interface="$1"
+  local remote_ip="$2"
+  local local_ip="$3"
+  local ipv6_address="$4"
+
+  # Commands to add to /etc/rc.local
   local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip\n\
 ip -6 addr add $ipv6_address dev $interface\n\
 ip link set $interface mtu 1480\n\
@@ -203,7 +208,7 @@ while true; do
       read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
 
       if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
-        make_permanent "$interface"
+        make_permanent "$interface" "$remote_ip" "$local_ip" "$ipv6_address"
         print_color "$COLOR_BLUE" "Configuration has been made permanent."
       else
         print_color "$COLOR_YELLOW" "Configuration has not been made permanent."
@@ -234,7 +239,24 @@ while true; do
         print_color "$COLOR_BLUE" "Available tunnels:"
         echo "$tunnels"
         read -p "Enter the name of the tunnel to make permanent: " tunnel_to_permanent
-        make_permanent "$tunnel_to_permanent"
+
+        # Extract configuration details for the chosen tunnel
+        if interface_exists "$tunnel_to_permanent"; then
+          local remote_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'remote' | awk '{print $2}')
+          local local_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'local' | awk '{print $2}')
+          local ipv6_address=$(ip -6 addr show dev "$tunnel_to_permanent" | grep 'inet6' | awk '{print $2}')
+          
+          # Ensure extracted values are not empty
+          if [ -z "$remote_ip" ] || [ -z "$local_ip" ] || [ -z "$ipv6_address" ]; then
+            print_color "$COLOR_RED" "Unable to retrieve complete configuration for $tunnel_to_permanent."
+            exit 1
+          fi
+
+          make_permanent "$tunnel_to_permanent" "$remote_ip" "$local_ip" "$ipv6_address"
+          print_color "$COLOR_BLUE" "Configuration for $tunnel_to_permanent has been made permanent."
+        else
+          print_color "$COLOR_RED" "Tunnel $tunnel_to_permanent does not exist."
+        fi
       fi
       ;;
 
@@ -242,7 +264,6 @@ while true; do
       print_color "$COLOR_GREEN" "Exiting."
       exit 0
       ;;
-
 
     *)
       print_color "$COLOR_RED" "Invalid choice. Please enter a number between 1 and 6."
