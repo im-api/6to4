@@ -127,17 +127,7 @@ EOF
 
     sudo tee -a "$rc_local" > /dev/null <<EOF
 
-# Tunnel setup for 6to4_To_KH_3862
-ip tunnel add 6to4_To_KH_3862 mode sit remote 5.75.209.216 local 185.58.241.203
-ip -6 addr add fd49:9189:885::3862/64 dev 6to4_To_KH_3862
-ip link set 6to4_To_KH_3862 mtu 1480
-ip link set 6to4_To_KH_3862 up
 
-# Tunnel setup for 6to4_tun__6846
-ip tunnel add 6to4_tun__6846 mode sit remote 91.107.174.140 local 185.58.241.203
-ip -6 addr add fd26:7c34:8b44::6846/64 dev 6to4_tun__6846
-ip link set 6to4_tun__6846 mtu 1480
-ip link set 6to4_tun__6846 up
 
 EOF
   fi
