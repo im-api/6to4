@@ -37,10 +37,13 @@ make_permanent() {
   local ipv6_address="$4"
 
   # Commands to add to /etc/rc.local
-  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
- ip -6 addr add $ipv6_address dev $interface
- ip link set $interface mtu 1480
- ip link set $interface up"
+  local setup_cmds=$(cat <<EOF
+ip tunnel add $interface mode sit remote $remote_ip local $local_ip
+ip -6 addr add $ipv6_address dev $interface
+ip link set $interface mtu 1480
+ip link set $interface up
+EOF
+  )
 
   # Check if /etc/rc.local exists and is executable
   local rc_local="/etc/rc.local"
@@ -62,17 +65,24 @@ EOF
   # Remove existing exit 0 if present
   sudo sed -i '/^exit 0$/d' "$rc_local"
 
-  # Create a backup of the current rc.local
+  # Create a temporary file for updating /etc/rc.local
   local tmp_rc_local=$(mktemp)
-  sudo cp "$rc_local" "$tmp_rc_local"
-
-  # Append new configuration before `exit 0`
-  awk '/^exit 0$/{print "# Tunnel setup for '$interface'"; print "'"$setup_cmds"'"; print "exit 0"; next}1' "$tmp_rc_local" | sudo tee "$rc_local" > /dev/null
-  rm "$tmp_rc_local"
+  awk -v iface="$interface" -v setup_cmds="$setup_cmds" '
+  BEGIN { FS = OFS = "\n" }
+  /^exit 0$/ {
+    print "# Tunnel setup for " iface
+    print setup_cmds
+    print "exit 0"
+    exit
+  }
+  { print }
+  ' "$rc_local" > "$tmp_rc_local"
+  sudo mv "$tmp_rc_local" "$rc_local"
 
   # Re-check format after modifications
   ensure_rc_local_format
 }
+
 
 # Function to remove a tunnel
 remove_tunnel() {
