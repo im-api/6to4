@@ -36,6 +36,12 @@ EOF
     sudo chmod +x "$rc_local"
   fi
 
+  # Ensure rc.local ends with exit 0
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+    print_color "31" "Appending exit 0 to $rc_local."
+    echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
+  fi
+
   # Append commands to /etc/rc.local
   if ! grep -q "$interface" "$rc_local"; then
     print_color "32" "Adding configuration to $rc_local"
@@ -68,6 +74,12 @@ remove_tunnel() {
       sudo sed -i "/ip -6 addr add .* dev $tunnel_name/d" "$rc_local"
       sudo sed -i "/ip link set $tunnel_name mtu 1480/d" "$rc_local"
       sudo sed -i "/ip link set $tunnel_name up/d" "$rc_local"
+
+      # Ensure rc.local ends with exit 0
+      if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+        print_color "31" "Appending exit 0 to $rc_local."
+        echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
+      fi
 
       print_color "32" "Tunnel $tunnel_name has been removed from $rc_local."
     else
@@ -121,8 +133,11 @@ EOF
     sudo chmod +x "$rc_local"
   fi
 
-  # Make rc.local executable
-  sudo chmod +x "$rc_local"
+  # Ensure rc.local ends with exit 0
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+    print_color "31" "Appending exit 0 to $rc_local."
+    echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
+  fi
 
   # Reload systemd and enable the service
   sudo systemctl daemon-reload
