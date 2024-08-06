@@ -19,7 +19,7 @@ ensure_rc_local_format() {
   # Ensure shebang is at the top
   if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
     print_color "31" "Adding shebang to $rc_local."
-    sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
+    sudo bash -c "echo '#!/bin/bash' > $rc_local"
   fi
 
   # Ensure exit 0 is at the end
@@ -27,6 +27,9 @@ ensure_rc_local_format() {
     print_color "31" "Appending exit 0 to $rc_local."
     echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
   fi
+
+  # Make sure the file is executable
+  sudo chmod +x "$rc_local"
 }
 
 # Function to create and configure rc-local service
@@ -37,16 +40,16 @@ configure_rc_local_service() {
 
   # Check if the service file exists and attempt to start the service
   if [ -f "$service_file" ]; then
-    print_color "36" "Attempting to start rc-local service..."
+    print_color "36" "Attempting to restart rc-local service..."
     sudo systemctl restart rc-local
-    sleep 2 # Give it a moment to process
 
-    if systemctl is-active --quiet rc-local; then
-      print_color "32" "rc-local service started successfully."
-      return
-    else
-      print_color "31" "rc-local service failed to start. Removing existing service file."
+    # Check if service restart was successful
+    if ! systemctl is-active --quiet rc-local; then
+      print_color "31" "rc-local service failed to restart. Removing existing service file."
       sudo rm -f "$service_file"
+    else
+      print_color "32" "rc-local service is already running."
+      return
     fi
   fi
 
@@ -82,6 +85,7 @@ EOF
   ensure_rc_local_format
 
   # Reload systemd and enable the service
+  print_color "36" "Reloading systemd and enabling rc-local service..."
   sudo systemctl daemon-reload
   sudo systemctl enable rc-local
 
