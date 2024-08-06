@@ -11,7 +11,7 @@ print_color() {
   local message="$2"
   echo -e "\e[${color}m${message}\e[0m"
 }
-#ensure_rc_local_format() {
+ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
   # Ensure shebang is at the top
