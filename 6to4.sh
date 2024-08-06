@@ -12,46 +12,33 @@ print_color() {
   echo -e "\e[${color}m${message}\e[0m"
 }
 
-# Function to make configuration permanent
+# Function to make configuration permanent using rc.local
 make_permanent() {
-  local distro="$1"
-  local interface="$2"
-  local local_ip="$3"
-  local remote_ip="$4"
-  local ipv6_address="$5"
+  local interface="$1"
+  local local_ip="$2"
+  local remote_ip="$3"
+  local ipv6_address="$4"
 
-  if [ "$distro" == "ubuntu" ]; then
-    local netplan_config="/etc/netplan/01-netcfg.yaml"
+  # Add commands to rc.local
+  local rc_local="/etc/rc.local"
 
-    # Create or update the Netplan configuration file
-    echo "network:
-      version: 2
-      ethernets:
-        ${interface}:
-          addresses:
-            - ${ipv6_address}
-          routes:
-            - to: ${remote_ip}
-              via: ${local_ip}
-              on-link: true
-    " | sudo tee "$netplan_config" > /dev/null
+  if ! grep -q "$interface" "$rc_local"; then
+    print_color "$COLOR_GREEN" "Adding configuration to $rc_local"
 
-    # Fix file permissions
-    sudo chmod 600 "$netplan_config"
-    sudo chown root:root "$netplan_config"
+    # Ensure rc.local is executable
+    sudo chmod +x "$rc_local"
 
-    # Apply the Netplan configuration
-    sudo netplan generate
-    sudo netplan apply
+    # Append the configuration commands to rc.local
+    sudo tee -a "$rc_local" > /dev/null <<EOF
+# Tunnel setup
+ip tunnel add $interface mode sit remote $remote_ip local $local_ip
+ip -6 addr add $ipv6_address dev $interface
+ip link set $interface mtu 1480
+ip link set $interface up
+EOF
   else
-    print_color "$COLOR_RED" "Unsupported distribution for permanent configuration."
+    print_color "$COLOR_YELLOW" "$rc_local already contains configuration for $interface."
   fi
-}
-
-# Function to list all 6to4 tunnels
-list_tunnels() {
-  print_color "$COLOR_BLUE" "Listing all 6to4 tunnels:"
-  ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
 }
 
 # Function to remove a tunnel
@@ -67,30 +54,26 @@ remove_tunnel() {
       ip tunnel del "$tunnel_name"
       print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been deleted."
 
-      if [[ "$distro" == "ubuntu" ]]; then
-        # Remove from Netplan or /etc/network/interfaces
-        if [ -d /etc/netplan ]; then
-          local netplan_file="/etc/netplan/01-netcfg.yaml"
-          sudo sed -i "/$tunnel_name/,+6d" "$netplan_file"
-          sudo netplan apply
-        else
-          local interfaces_file="/etc/network/interfaces"
-          sudo sed -i "/auto $tunnel_name/,+4d" "$interfaces_file"
-          sudo systemctl restart networking
-        fi
-      elif [[ "$distro" == "centos" ]]; then
-        # Remove the configuration file
-        local ifcfg_file="/etc/sysconfig/network-scripts/ifcfg-$tunnel_name"
-        sudo rm -f "$ifcfg_file"
-        sudo systemctl restart network
-      fi
-      print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been removed from the permanent configuration."
+      # Remove from rc.local
+      local rc_local="/etc/rc.local"
+      sudo sed -i "/ip tunnel add $tunnel_name/d" "$rc_local"
+      sudo sed -i "/ip -6 addr add .* dev $tunnel_name/d" "$rc_local"
+      sudo sed -i "/ip link set $tunnel_name mtu 1480/d" "$rc_local"
+      sudo sed -i "/ip link set $tunnel_name up/d" "$rc_local"
+
+      print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been removed from $rc_local."
     else
       print_color "$COLOR_YELLOW" "Operation canceled."
     fi
   else
     print_color "$COLOR_RED" "Tunnel $tunnel_name does not exist."
   fi
+}
+
+# Function to list all 6to4 tunnels
+list_tunnels() {
+  print_color "$COLOR_BLUE" "Listing all 6to4 tunnels:"
+  ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
 }
 
 # Detect distribution
@@ -100,7 +83,6 @@ if [ -f /etc/os-release ]; then
 else
   distro="unknown"
 fi
-
 
 # Define color codes
 COLOR_GREEN="32"
@@ -116,8 +98,9 @@ while true; do
   print_color "$COLOR_CYAN" "2. Kharej"
   print_color "$COLOR_CYAN" "3. List tunnels"
   print_color "$COLOR_CYAN" "4. Remove tunnel"
-  print_color "$COLOR_CYAN" "5. Exit"
-  read -p "Enter your choice (1-5): " main_choice
+  print_color "$COLOR_CYAN" "5. Make tunnel permanent"
+  print_color "$COLOR_CYAN" "6. Exit"
+  read -p "Enter your choice (1-6): " main_choice
 
   case $main_choice in
     1|2)
@@ -216,7 +199,7 @@ while true; do
       read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
 
       if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
-        make_permanent "$distro" "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
+        make_permanent "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
         print_color "$COLOR_BLUE" "Configuration has been made permanent."
       else
         print_color "$COLOR_YELLOW" "Configuration has not been made permanent."
@@ -240,12 +223,41 @@ while true; do
       ;;
 
     5)
+      # Make tunnel permanent
+      tunnels=$(list_tunnels)
+      if [ -z "$tunnels" ]; then
+        print_color "$COLOR_RED" "No tunnels found."
+      else
+        print_color "$COLOR_BLUE" "Available tunnels:"
+        echo "$tunnels"
+        read -p "Enter the name of the tunnel to make permanent: " tunnel_to_make_permanent
+
+        # Get tunnel details
+        if interface_exists "$tunnel_to_make_permanent"; then
+          # This is a simplified approach. In a real-world scenario, you might need to retrieve details from a config file or another source.
+          read -p "Enter the local IPv4 address: " local_ip
+          read -p "Enter the remote IPv4 address: " remote_ip
+          read -p "Enter the base IPv6 address (e.g., fdcc:c4da:bc9b::): " base_ipv6
+
+          # Generate a dynamic suffix for the IPv6 address
+          suffix=$(printf '%04x' $((RANDOM % 65536)))
+          ipv6_address="${base_ipv6}${suffix}/64"
+
+          make_permanent "$tunnel_to_make_permanent" "$local_ip" "$remote_ip" "$ipv6_address"
+          print_color "$COLOR_BLUE" "Configuration for $tunnel_to_make_permanent has been made permanent."
+        else
+          print_color "$COLOR_RED" "Tunnel $tunnel_to_make_permanent does not exist."
+        fi
+      fi
+      ;;
+
+    6)
       print_color "$COLOR_GREEN" "Exiting."
       exit 0
       ;;
 
     *)
-      print_color "$COLOR_RED" "Invalid option. Please enter a number between 1 and 5."
+      print_color "$COLOR_RED" "Invalid option. Please enter a number between 1 and 6."
       ;;
   esac
 done
