@@ -20,51 +20,31 @@ make_permanent() {
   local remote_ip="$4"
   local ipv6_address="$5"
 
-  if [[ "$distro" == "ubuntu" ]]; then
-    # Check if Netplan is used (typically in newer versions)
-    if [ -d /etc/netplan ]; then
-      local netplan_file="/etc/netplan/01-netcfg.yaml"
-      print_color "$COLOR_GREEN" "Updating Netplan configuration in $netplan_file"
-      sudo bash -c "cat >> $netplan_file" <<EOL
+  if [ "$distro" == "ubuntu" ]; then
+    local netplan_config="/etc/netplan/01-netcfg.yaml"
 
-network:
-  version: 2
-  tunnels:
-    $interface:
-      mode: sit
-      remote: $remote_ip
-      local: $local_ip
-      addresses:
-        - $ipv6_address
-      mtu: 1480
-EOL
-      sudo netplan apply
-    else
-      local interfaces_file="/etc/network/interfaces"
-      print_color "$COLOR_GREEN" "Updating /etc/network/interfaces configuration in $interfaces_file"
-      sudo bash -c "cat >> $interfaces_file" <<EOL
+    # Create or update the Netplan configuration file
+    echo "network:
+      version: 2
+      ethernets:
+        ${interface}:
+          addresses:
+            - ${ipv6_address}
+          routes:
+            - to: ${remote_ip}
+              via: ${local_ip}
+              on-link: true
+    " | sudo tee "$netplan_config" > /dev/null
 
-auto $interface
-iface $interface inet6 static
-    address ${ipv6_address%/*}
-    netmask 64
-    up ip link set mtu 1480 dev $interface
-    up ip link set $interface up
-EOL
-      sudo systemctl restart networking
-    fi
-  elif [[ "$distro" == "centos" ]]; then
-    local ifcfg_file="/etc/sysconfig/network-scripts/ifcfg-$interface"
-    print_color "$COLOR_GREEN" "Creating configuration file $ifcfg_file"
-    sudo bash -c "cat > $ifcfg_file" <<EOL
-DEVICE=$interface
-BOOTPROTO=none
-ONBOOT=yes
-IPV6INIT=yes
-MTU=1480
-IPV6ADDR=${ipv6_address%/*}
-EOL
-    sudo systemctl restart network
+    # Fix file permissions
+    sudo chmod 600 "$netplan_config"
+    sudo chown root:root "$netplan_config"
+
+    # Apply the Netplan configuration
+    sudo netplan generate
+    sudo netplan apply
+  else
+    print_color "$COLOR_RED" "Unsupported distribution for permanent configuration."
   fi
 }
 
