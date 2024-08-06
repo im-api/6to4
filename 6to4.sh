@@ -267,7 +267,7 @@ while true; do
     4)
       read -p "Enter the name of the tunnel to remove: " tunnel_name
       remove_tunnel "$tunnel_name"
-      ;; 
+      ;;
     5)
       # List tunnels before asking for tunnel name
       tunnels=$(list_tunnels)
@@ -297,7 +297,6 @@ while true; do
 
       make_permanent "$tunnel_name" "$remote_ip" "$local_ip" "$ipv6_address"
       ;;
-
     6)
       configure_rc_local_service
       ;;
