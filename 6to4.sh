@@ -269,4 +269,5 @@ while true; do
       print_color "$COLOR_RED" "Invalid choice. Please enter a number between 1 and 6."
       ;;
   esac
+  
 done
