@@ -29,6 +29,67 @@ ensure_rc_local_format() {
   fi
 }
 
+# Function to create and configure rc-local service
+configure_rc_local_service() {
+  local service_file="/etc/systemd/system/rc-local.service"
+
+  print_color "36" "Creating and configuring rc-local service..."
+
+  # Check if the service file exists and attempt to start the service
+  if [ -f "$service_file" ]; then
+    print_color "36" "Attempting to start rc-local service..."
+    sudo systemctl restart rc-local
+    sleep 2 # Give it a moment to process
+
+    if systemctl is-active --quiet rc-local; then
+      print_color "32" "rc-local service started successfully."
+      return
+    else
+      print_color "31" "rc-local service failed to start. Removing existing service file."
+      sudo rm -f "$service_file"
+    fi
+  fi
+
+  # Create or recreate the service file
+  print_color "31" "Creating new rc-local service file."
+  sudo tee "$service_file" > /dev/null <<EOF
+[Unit]
+Description=/etc/rc.local Compatibility
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/etc/rc.local start
+TimeoutSec=0
+RemainAfterExit=yes
+GuessMainPID=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # Ensure /etc/rc.local exists and is executable
+  local rc_local="/etc/rc.local"
+  if [ ! -f "$rc_local" ]; then
+    print_color "31" "$rc_local does not exist. Creating it."
+    sudo tee "$rc_local" > /dev/null <<EOF
+#!/bin/bash
+EOF
+    sudo chmod +x "$rc_local"
+  fi
+
+  # Ensure proper format for /etc/rc.local
+  ensure_rc_local_format
+
+  # Reload systemd and enable the service
+  sudo systemctl daemon-reload
+  sudo systemctl enable rc-local
+  sudo systemctl start rc-local
+
+  # Check service status
+  sudo systemctl status rc-local
+}
+
 # Function to make configuration permanent using rc.local
 make_permanent() {
   local interface="$1"
@@ -67,6 +128,9 @@ EOF
 
   # Re-check format after modifications
   ensure_rc_local_format
+
+  # Configure the rc-local service
+  configure_rc_local_service
 }
 
 # Function to remove a tunnel
@@ -102,58 +166,6 @@ remove_tunnel() {
 list_tunnels() {
   print_color "36" "Listing all 6to4 tunnels:"
   ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
-}
-
-# Function to create and configure rc-local service
-configure_rc_local_service() {
-  local service_file="/etc/systemd/system/rc-local.service"
-
-  print_color "36" "Creating and configuring rc-local service..."
-
-  # Create the service file if it doesn't exist
-  if [ ! -f "$service_file" ]; then
-    print_color "31" "$service_file does not exist. Creating it."
-    sudo tee "$service_file" > /dev/null <<EOF
-[Unit]
-Description=/etc/rc.local Compatibility
-After=network.target
-
-[Service]
-Type=forking
-ExecStart=/etc/rc.local start
-TimeoutSec=0
-RemainAfterExit=yes
-GuessMainPID=no
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  fi
-
-  # Ensure /etc/rc.local exists and is executable
-  local rc_local="/etc/rc.local"
-
-  if [ ! -f "$rc_local" ]; then
-    print_color "31" "$rc_local does not exist. Creating it."
-    sudo tee "$rc_local" > /dev/null <<EOF
-#!/bin/bash
-EOF
-    sudo chmod +x "$rc_local"
-  else
-    # Ensure /etc/rc.local is executable
-    sudo chmod +x "$rc_local"
-  fi
-
-  # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
-
-  # Reload systemd and enable the service
-  sudo systemctl daemon-reload
-  sudo systemctl enable rc-local
-  sudo systemctl start rc-local
-
-  # Check service status
-  sudo systemctl status rc-local
 }
 
 # Detect distribution
