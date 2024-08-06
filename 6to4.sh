@@ -243,6 +243,7 @@ while true; do
       exit 0
       ;;
 
+
     *)
       print_color "$COLOR_RED" "Invalid choice. Please enter a number between 1 and 6."
       ;;
