@@ -41,12 +41,18 @@ make_permanent() {
   local interface="$1"
 
   # Get tunnel details
-  local local_ip=$(ip -o addr show dev "$interface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+  local local_ip=$(ip -o addr show dev "$interface" | awk '/inet / {print $4}' | cut -d'/' -f1)
   local remote_ip=$(ip -o tunnel show "$interface" | awk '{print $4}')
-  local ipv6_address=$(ip -6 addr show dev "$interface" | grep -oP '(?<=inet6\s)[^/]+')
+  local ipv6_address=$(ip -6 addr show dev "$interface" | awk '/inet6 / {print $2}' | cut -d'/' -f1)
 
-  # Validate retrieved values
-  if [ -z "$local_ip" ] || [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
+  # If no local IP is found, display a message and return
+  if [ -z "$local_ip" ]; then
+    print_color "$COLOR_RED" "No IPv4 address found for the interface $interface. Permanent configuration requires an IPv4 address."
+    return 1
+  fi
+
+  # Validate required values
+  if [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
     print_color "$COLOR_RED" "Failed to retrieve tunnel details. Ensure the tunnel exists and is properly configured."
     return 1
   fi
