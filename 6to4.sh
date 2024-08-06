@@ -11,17 +11,18 @@ print_color() {
   local message="$2"
   echo -e "\e[${color}m${message}\e[0m"
 }
+
 ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
   # Ensure shebang is at the top
   if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
     print_color "31" "Adding shebang to $rc_local."
-    sudo bash -c "echo '#!/bin/bash' > $rc_local"
+    sudo sed -i '1i#!/bin/bash' "$rc_local"
   fi
 
   # Ensure exit 0 is at the end
-  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0$'; then
     print_color "31" "Appending exit 0 to $rc_local."
     echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
   fi
@@ -56,7 +57,7 @@ EOF
   fi
 
   # Ensure proper format for /etc/rc.local
-  #ensure_rc_local_format
+  ensure_rc_local_format
 
   # Remove existing configuration for the interface from /etc/rc.local
   sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
@@ -65,7 +66,7 @@ EOF
   sudo sed -i "/^exit 0$/i # Tunnel setup for $interface\n$setup_cmds\n" "$rc_local"
 
   # Ensure proper format for /etc/rc.local
-  #ensure_rc_local_format
+  ensure_rc_local_format
 
   # Configure the rc-local service
   configure_rc_local_service
@@ -116,12 +117,13 @@ EOF
     print_color "31" "$rc_local does not exist. Creating it."
     sudo tee "$rc_local" > /dev/null <<EOF
 #!/bin/bash
+exit 0
 EOF
     sudo chmod +x "$rc_local"
   fi
 
   # Ensure proper format for /etc/rc.local
-  #ensure_rc_local_format
+  ensure_rc_local_format
 
   # Reload systemd and enable the service
   print_color "36" "Reloading systemd and enabling rc-local service..."
@@ -140,47 +142,6 @@ EOF
   sudo systemctl status rc-local
 }
 
-# Function to make configuration permanent using rc.local
-make_permanent() {
-  local interface="$1"
-  local remote_ip="$2"
-  local local_ip="$3"
-  local ipv6_address="$4"
-  # Configure the rc-local service
-  #configure_rc_local_service
-  # Commands to add to /etc/rc.local
-  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
- ip -6 addr add $ipv6_address dev $interface
- ip link set $interface mtu 1480
- ip link set $interface up"
-
-  # Check if /etc/rc.local exists and is executable
-  local rc_local="/etc/rc.local"
-
-  if [ ! -f "$rc_local" ]; then
-    print_color "31" "$rc_local does not exist. Creating it."
-    sudo tee "$rc_local" > /dev/null <<EOF
-#!/bin/bash
-EOF
-    sudo chmod +x "$rc_local"
-  fi
-
-  # Ensure proper format for /etc/rc.local
-  #ensure_rc_local_format
-
-  # Remove existing configuration for the interface from /etc/rc.local
-  sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
-
-  # Append new configuration before `exit 0`
-  local tmp_rc_local=$(mktemp)
-  awk '/^exit 0$/{print FILENAME " configured before exit 0"; exit 0}' "$rc_local" > "$tmp_rc_local"
-  echo -e "# Tunnel setup for $interface\n$setup_cmds" | cat - "$tmp_rc_local" > "$rc_local"
-  rm "$tmp_rc_local"
-
-  # Re-check format after modifications
-  #ensure_rc_local_format
-}
-
 # Function to remove a tunnel
 remove_tunnel() {
   local tunnel_name="$1"
@@ -196,10 +157,9 @@ remove_tunnel() {
       # Remove from rc.local
       local rc_local="/etc/rc.local"
       sudo sed -i "/^# Tunnel setup for $tunnel_name$/,+4d" "$rc_local"
-      sudo sed -i '/^exit 0$/d' "$rc_local"
 
       # Ensure proper format for /etc/rc.local
-      #ensure_rc_local_format
+      ensure_rc_local_format
 
       print_color "32" "Tunnel $tunnel_name has been removed from $rc_local."
     else
