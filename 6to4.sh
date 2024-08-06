@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Function to check if an interface already exists
+interface_exists() {
+  ip link show | grep -q "$1"
+}
+
 # Function to print colored messages
 print_color() {
   local color="$1"
@@ -7,147 +12,111 @@ print_color() {
   echo -e "\e[${color}m${message}\e[0m"
 }
 
-# Directory to store tunnel scripts
-TUNNEL_DIR="$HOME/root/tunnels"
-
-# Ensure the tunnel directory exists
-mkdir -p "$TUNNEL_DIR"
-
-# Function to create the tunnel setup script
-create_tunnel_script() {
-  local interface="$1"
-  local local_ip="$2"
-  local remote_ip="$3"
-  local ipv6_address="$4"
-  
-  local script_file="$TUNNEL_DIR/$interface.sh"
-
-  # Create or overwrite the script file
-  cat > "$script_file" <<EOF
-#!/bin/bash
-ip tunnel add $interface mode sit remote $remote_ip local $local_ip
-ip -6 addr add $ipv6_address dev $interface
-ip link set $interface mtu 1480
-ip link set $interface up
-EOF
-
-  chmod +x "$script_file"
-}
-
 # Function to make configuration permanent
 make_permanent() {
-  local interface="$1"
-  
-  # Extract local and remote IPv4 addresses from tunnel configuration
-  local tunnel_info=$(ip -o tunnel show dev "$interface")
-  local local_ip=$(echo "$tunnel_info" | awk '{print $4}' | cut -d' ' -f2)
-  local remote_ip=$(echo "$tunnel_info" | awk '{print $4}' | cut -d' ' -f1)
-  
-  # Extract IPv6 address
-  local ipv6_address=$(ip -6 addr show dev "$interface" | awk '/inet6 / {print $2}' | cut -d'/' -f1)
+  local distro="$1"
+  local interface="$2"
+  local local_ip="$3"
+  local remote_ip="$4"
+  local ipv6_address="$5"
 
-  # Validate retrieved values
-  if [ -z "$local_ip" ] || [ -z "$remote_ip" ]; then
-    print_color "33" "No IPv4 address found for the interface $interface. Configuring for IPv6 only."
-    local_ip="none"
-    remote_ip="none"
+  if [ "$distro" == "ubuntu" ]; then
+    local netplan_config="/etc/netplan/01-netcfg.yaml"
+
+    # Create or update the Netplan configuration file
+    echo "network:
+      version: 2
+      ethernets:
+        ${interface}:
+          addresses:
+            - ${ipv6_address}
+          routes:
+            - to: ${remote_ip}
+              via: ${local_ip}
+              on-link: true
+    " | sudo tee "$netplan_config" > /dev/null
+
+    # Fix file permissions
+    sudo chmod 600 "$netplan_config"
+    sudo chown root:root "$netplan_config"
+
+    # Apply the Netplan configuration
+    sudo netplan generate
+    sudo netplan apply
+  else
+    print_color "$COLOR_RED" "Unsupported distribution for permanent configuration."
   fi
-
-  if [ -z "$ipv6_address" ]; then
-    print_color "31" "Failed to retrieve IPv6 address for the tunnel $interface. Ensure the tunnel is properly configured."
-    return 1
-  fi
-
-  create_tunnel_script "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
-
-  # Create or update systemd service
-  if [ ! -f /etc/systemd/system/tunnel-setup.service ]; then
-    sudo bash -c "cat > /etc/systemd/system/tunnel-setup.service <<EOF
-[Unit]
-Description=Set up tunnel interfaces
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/tunnel-setup.sh
-
-[Install]
-WantedBy=multi-user.target
-EOF"
-    sudo touch /usr/local/bin/tunnel-setup.sh
-    sudo chmod +x /usr/local/bin/tunnel-setup.sh
-  fi
-
-  # Add all tunnel scripts to the service script
-  {
-    echo "#!/bin/bash"
-    for script in "$TUNNEL_DIR"/*.sh; do
-      [ -x "$script" ] && echo "$script"
-    done
-  } | sudo tee /usr/local/bin/tunnel-setup.sh > /dev/null
-
-  sudo chmod +x /usr/local/bin/tunnel-setup.sh
-
-  # Reload and enable the service
-  sudo systemctl daemon-reload
-  sudo systemctl enable tunnel-setup.service
-
-  print_color "34" "Tunnel configuration has been made permanent."
 }
 
 # Function to list all 6to4 tunnels
 list_tunnels() {
-  print_color "34" "Listing all 6to4 tunnels:"
-  ip -o tunnel show | awk '{print $1}'
+  print_color "$COLOR_BLUE" "Listing all 6to4 tunnels:"
+  ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
 }
 
 # Function to remove a tunnel
 remove_tunnel() {
   local tunnel_name="$1"
+  local distro="$2"
   
-  if ip link show "$tunnel_name" > /dev/null 2>&1; then
-    print_color "33" "Are you sure you want to delete the tunnel $tunnel_name? (y/n)"
+  if interface_exists "$tunnel_name"; then
+    print_color "$COLOR_YELLOW" "Are you sure you want to delete the tunnel $tunnel_name? (y/n)"
     read -p "Enter your choice: " confirm_choice
     
     if [[ "$confirm_choice" =~ ^[Yy]$ ]]; then
       ip tunnel del "$tunnel_name"
-      print_color "32" "Tunnel $tunnel_name has been deleted."
+      print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been deleted."
 
-      # Remove the associated script
-      local script_file="$TUNNEL_DIR/$tunnel_name.sh"
-      if [ -f "$script_file" ]; then
-        rm "$script_file"
-        print_color "32" "Tunnel script $script_file has been removed."
+      if [[ "$distro" == "ubuntu" ]]; then
+        # Remove from Netplan or /etc/network/interfaces
+        if [ -d /etc/netplan ]; then
+          local netplan_file="/etc/netplan/01-netcfg.yaml"
+          sudo sed -i "/$tunnel_name/,+6d" "$netplan_file"
+          sudo netplan apply
+        else
+          local interfaces_file="/etc/network/interfaces"
+          sudo sed -i "/auto $tunnel_name/,+4d" "$interfaces_file"
+          sudo systemctl restart networking
+        fi
+      elif [[ "$distro" == "centos" ]]; then
+        # Remove the configuration file
+        local ifcfg_file="/etc/sysconfig/network-scripts/ifcfg-$tunnel_name"
+        sudo rm -f "$ifcfg_file"
+        sudo systemctl restart network
       fi
-
-      # Remove from systemd service if the script was present
-      if [ -f /usr/local/bin/tunnel-setup.sh ]; then
-        sudo sed -i "/$script_file/d" /usr/local/bin/tunnel-setup.sh
-        sudo chmod +x /usr/local/bin/tunnel-setup.sh
-      fi
-
-      # Reload and restart the systemd service
-      sudo systemctl daemon-reload
-      sudo systemctl restart tunnel-setup.service
-
-      print_color "32" "Tunnel $tunnel_name has been removed from the permanent configuration."
+      print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been removed from the permanent configuration."
     else
-      print_color "33" "Operation canceled."
+      print_color "$COLOR_YELLOW" "Operation canceled."
     fi
   else
-    print_color "31" "Tunnel $tunnel_name does not exist."
+    print_color "$COLOR_RED" "Tunnel $tunnel_name does not exist."
   fi
 }
 
+# Detect distribution
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  distro=$(echo "$ID" | tr '[:upper:]' '[:lower:]')
+else
+  distro="unknown"
+fi
+
+# Define color codes
+COLOR_GREEN="32"
+COLOR_RED="31"
+COLOR_YELLOW="33"
+COLOR_BLUE="34"
+COLOR_CYAN="36"
+
 # Main menu loop
 while true; do
-  print_color "36" "Select an option:"
-  print_color "36" "1. Iran"
-  print_color "36" "2. Kharej"
-  print_color "36" "3. List tunnels"
-  print_color "36" "4. Remove tunnel"
-  print_color "36" "5. Make permanent"
-  print_color "36" "6. Exit"
-  read -p "Enter your choice (1-6): " main_choice
+  print_color "$COLOR_CYAN" "Select an option:"
+  print_color "$COLOR_CYAN" "1. Iran"
+  print_color "$COLOR_CYAN" "2. Kharej"
+  print_color "$COLOR_CYAN" "3. List tunnels"
+  print_color "$COLOR_CYAN" "4. Remove tunnel"
+  print_color "$COLOR_CYAN" "5. Exit"
+  read -p "Enter your choice (1-5): " main_choice
 
   case $main_choice in
     1|2)
@@ -158,7 +127,7 @@ while true; do
 
       # Validate base IPv6 address
       if ! [[ $base_ipv6 =~ ^[0-9a-fA-F:]+::$ ]]; then
-        print_color "31" "Invalid base IPv6 address format."
+        print_color "$COLOR_RED" "Invalid base IPv6 address format."
         exit 1
       fi
 
@@ -171,106 +140,111 @@ while true; do
         # Iran setup
         interface="6to4_tun__$suffix"  # Unique interface name using dynamic suffix
 
-        if ip link show "$interface" > /dev/null 2>&1; then
-          print_color "31" "The interface name $interface is already in use. Please choose another name."
+        if interface_exists "$interface"; then
+          print_color "$COLOR_RED" "The interface name $interface is already in use. Please choose another name."
           exit 1
         fi
 
         # Create the tunnel
-        print_color "32" "Creating tunnel $interface with remote $remote_ip and local $local_ip"
+        print_color "$COLOR_GREEN" "Creating tunnel $interface with remote $remote_ip and local $local_ip"
         if ! ip tunnel add "$interface" mode sit remote "$remote_ip" local "$local_ip"; then
-          print_color "31" "Failed to create tunnel $interface."
+          print_color "$COLOR_RED" "Failed to create tunnel $interface."
           exit 1
         fi
 
         # Add IPv6 address
-        print_color "32" "Adding IPv6 address $ipv6_address to $interface"
+        print_color "$COLOR_GREEN" "Adding IPv6 address $ipv6_address to $interface"
         if ! ip -6 addr add "$ipv6_address" dev "$interface"; then
-          print_color "31" "Failed to add IPv6 address to $interface."
+          print_color "$COLOR_RED" "Failed to add IPv6 address to $interface."
           exit 1
         fi
 
         # Configure MTU and bring up the interface
-        print_color "32" "Setting MTU and bringing up $interface"
+        print_color "$COLOR_GREEN" "Setting MTU and bringing up $interface"
         if ! ip link set "$interface" mtu 1480; then
-          print_color "31" "Failed to set MTU for $interface."
+          print_color "$COLOR_RED" "Failed to set MTU for $interface."
           exit 1
         fi
 
         if ! ip link set "$interface" up; then
-          print_color "31" "Failed to bring up $interface."
+          print_color "$COLOR_RED" "Failed to bring up $interface."
           exit 1
         fi
 
-        print_color "34" "Tunnel $interface has been set up for Iran with IPv6 address $ipv6_address."
+        print_color "$COLOR_BLUE" "Tunnel $interface has been set up for Iran with IPv6 address $ipv6_address."
 
       elif [ "$main_choice" -eq 2 ]; then
         # Kharej setup
         read -p "Enter the name for the interface (ensure it's unique): " interface
 
-        if ip link show "$interface" > /dev/null 2>&1; then
-          print_color "31" "The interface name $interface is already in use. Please choose another name."
+        if interface_exists "$interface"; then
+          print_color "$COLOR_RED" "The interface name $interface is already in use. Please choose another name."
           exit 1
         fi
 
         # Create the tunnel
-        print_color "32" "Creating tunnel $interface with remote $remote_ip and local $local_ip"
+        print_color "$COLOR_GREEN" "Creating tunnel $interface with remote $remote_ip and local $local_ip"
         if ! ip tunnel add "$interface" mode sit remote "$remote_ip" local "$local_ip"; then
-          print_color "31" "Failed to create tunnel $interface."
+          print_color "$COLOR_RED" "Failed to create tunnel $interface."
           exit 1
         fi
 
         # Add IPv6 address
-        print_color "32" "Adding IPv6 address $ipv6_address to $interface"
+        print_color "$COLOR_GREEN" "Adding IPv6 address $ipv6_address to $interface"
         if ! ip -6 addr add "$ipv6_address" dev "$interface"; then
-          print_color "31" "Failed to add IPv6 address to $interface."
+          print_color "$COLOR_RED" "Failed to add IPv6 address to $interface."
           exit 1
         fi
 
         # Configure MTU and bring up the interface
-        print_color "32" "Setting MTU and bringing up $interface"
+        print_color "$COLOR_GREEN" "Setting MTU and bringing up $interface"
         if ! ip link set "$interface" mtu 1480; then
-          print_color "31" "Failed to set MTU for $interface."
+          print_color "$COLOR_RED" "Failed to set MTU for $interface."
           exit 1
         fi
 
         if ! ip link set "$interface" up; then
-          print_color "31" "Failed to bring up $interface."
+          print_color "$COLOR_RED" "Failed to bring up $interface."
           exit 1
         fi
 
-        print_color "34" "Tunnel $interface has been set up for Kharej with IPv6 address $ipv6_address."
+        print_color "$COLOR_BLUE" "Tunnel $interface has been set up for Kharej with IPv6 address $ipv6_address."
+      fi
+
+      # Ask if the user wants to make the configuration permanent
+      read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
+
+      if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
+        make_permanent "$distro" "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
+        print_color "$COLOR_BLUE" "Configuration has been made permanent."
+      else
+        print_color "$COLOR_YELLOW" "Configuration has not been made permanent."
       fi
       ;;
 
     3)
-      # List tunnels
       list_tunnels
       ;;
 
     4)
-      # Remove tunnel
-      read -p "Enter the name of the tunnel to remove: " tunnel_to_remove
-      remove_tunnel "$tunnel_to_remove"
+      tunnels=$(list_tunnels)
+      if [ -z "$tunnels" ]; then
+        print_color "$COLOR_RED" "No tunnels found."
+      else
+        print_color "$COLOR_BLUE" "Available tunnels:"
+        echo "$tunnels"
+        read -p "Enter the name of the tunnel to remove: " tunnel_to_remove
+        remove_tunnel "$tunnel_to_remove" "$distro"
+      fi
       ;;
 
     5)
-      # Make permanent
-      print_color "34" "Listing all 6to4 tunnels:"
-      list_tunnels
-
-      read -p "Enter the name of the tunnel to make permanent: " tunnel_to_make_permanent
-      make_permanent "$tunnel_to_make_permanent"
-      ;;
-
-    6)
-      # Exit
-      print_color "32" "Exiting..."
+      print_color "$COLOR_GREEN" "Exiting."
       exit 0
       ;;
 
     *)
-      print_color "31" "Invalid option. Please enter a number between 1 and 6."
+      print_color "$COLOR_RED" "Invalid option. Please enter a number between 1 and 5."
       ;;
   esac
 done
