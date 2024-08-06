@@ -271,8 +271,8 @@ while true; do
       else
         print_color "34" "Available tunnels:"
         echo "$tunnels"
-        read -p "Enter the name of the tunnel to remove: " tunnel_name
-        remove_tunnel "$tunnel_name"
+      read -p "Enter the name of the tunnel to remove: " tunnel_name
+      remove_tunnel "$tunnel_name"
       ;;
     5)
       tunnels=$(list_tunnels)
