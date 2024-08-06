@@ -71,7 +71,7 @@ EOL
 # Function to list all 6to4 tunnels
 list_tunnels() {
   print_color "$COLOR_BLUE" "Listing all 6to4 tunnels:"
-  ip link show | grep -E '6to4_To_[KH]_' | awk '{print $2}' | sed 's/:$//'
+  ip -o link show | grep -E '6to4' | awk -F': ' '{print $2}'
 }
 
 # Function to remove a tunnel
@@ -158,7 +158,7 @@ while true; do
       # Determine the type of setup
       if [ "$main_choice" -eq 1 ]; then
         # Iran setup
-        interface="6to4_To_KH_$suffix"  # Unique interface name using dynamic suffix
+        interface="6to4_tun__$suffix"  # Unique interface name using dynamic suffix
 
         if interface_exists "$interface"; then
           print_color "$COLOR_RED" "The interface name $interface is already in use. Please choose another name."
