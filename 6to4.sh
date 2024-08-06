@@ -40,9 +40,9 @@ make_permanent() {
 
   # Commands to add to /etc/rc.local
   local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
-ip -6 addr add $ipv6_address dev $interface
-ip link set $interface mtu 1480
-ip link set $interface up"
+ ip -6 addr add $ipv6_address dev $interface
+ ip link set $interface mtu 1480
+ ip link set $interface up"
 
   # Check if /etc/rc.local exists and is executable
   local rc_local="/etc/rc.local"
@@ -51,7 +51,6 @@ ip link set $interface up"
     print_color "31" "$rc_local does not exist. Creating it."
     sudo tee "$rc_local" > /dev/null <<EOF
 #!/bin/bash
-exit 0
 EOF
     sudo chmod +x "$rc_local"
   fi
@@ -63,9 +62,12 @@ EOF
   sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
 
   # Append new configuration before `exit 0`
-  sudo sed -i "/^exit 0$/i # Tunnel setup for $interface\n$setup_cmds\n" "$rc_local"
+  local tmp_rc_local=$(mktemp)
+  awk '/^exit 0$/{print FILENAME " configured before exit 0"; exit 0}' "$rc_local" > "$tmp_rc_local"
+  echo -e "# Tunnel setup for $interface\n$setup_cmds" | cat - "$tmp_rc_local" > "$rc_local"
+  rm "$tmp_rc_local"
 
-  # Ensure proper format for /etc/rc.local
+  # Re-check format after modifications
   ensure_rc_local_format
 
   # Configure the rc-local service
