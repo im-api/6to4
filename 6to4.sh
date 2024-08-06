@@ -242,9 +242,9 @@ while true; do
 
         # Extract configuration details for the chosen tunnel
         if interface_exists "$tunnel_to_permanent"; then
-          local remote_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'remote' | awk '{print $2}')
-          local local_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'local' | awk '{print $2}')
-          local ipv6_address=$(ip -6 addr show dev "$tunnel_to_permanent" | grep 'inet6' | awk '{print $2}')
+          remote_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'remote' | awk '{print $2}')
+          local_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'local' | awk '{print $2}')
+          ipv6_address=$(ip -6 addr show dev "$tunnel_to_permanent" | grep 'inet6' | awk '{print $2}')
           
           # Ensure extracted values are not empty
           if [ -z "$remote_ip" ] || [ -z "$local_ip" ] || [ -z "$ipv6_address" ]; then
@@ -269,5 +269,4 @@ while true; do
       print_color "$COLOR_RED" "Invalid choice. Please enter a number between 1 and 6."
       ;;
   esac
-  
 done
