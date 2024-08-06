@@ -11,7 +11,7 @@ print_color() {
   local message="$2"
   echo -e "\e[${color}m${message}\e[0m"
 }
-ensure_rc_local_format() {
+#ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
   # Ensure shebang is at the top
@@ -56,7 +56,7 @@ EOF
   fi
 
   # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
+  #ensure_rc_local_format
 
   # Remove existing configuration for the interface from /etc/rc.local
   sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
@@ -65,7 +65,7 @@ EOF
   sudo sed -i "/^exit 0$/i # Tunnel setup for $interface\n$setup_cmds\n" "$rc_local"
 
   # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
+  #ensure_rc_local_format
 
   # Configure the rc-local service
   configure_rc_local_service
@@ -121,7 +121,7 @@ EOF
   fi
 
   # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
+  #ensure_rc_local_format
 
   # Reload systemd and enable the service
   print_color "36" "Reloading systemd and enabling rc-local service..."
@@ -166,7 +166,7 @@ EOF
   fi
 
   # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
+  #ensure_rc_local_format
 
   # Remove existing configuration for the interface from /etc/rc.local
   sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
@@ -178,7 +178,7 @@ EOF
   rm "$tmp_rc_local"
 
   # Re-check format after modifications
-  ensure_rc_local_format
+  #ensure_rc_local_format
 }
 
 # Function to remove a tunnel
@@ -199,7 +199,7 @@ remove_tunnel() {
       sudo sed -i '/^exit 0$/d' "$rc_local"
 
       # Ensure proper format for /etc/rc.local
-      ensure_rc_local_format
+      #ensure_rc_local_format
 
       print_color "32" "Tunnel $tunnel_name has been removed from $rc_local."
     else
