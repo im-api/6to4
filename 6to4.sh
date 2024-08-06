@@ -218,7 +218,7 @@ while true; do
       ;;
 
     6)
-      print_color "32" "Exiting."
+      print_color "32" "Exiting..."
       exit 0
       ;;
 
