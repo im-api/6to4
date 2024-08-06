@@ -206,6 +206,9 @@ while true; do
             exit 1
           fi
 
+          # Remove the leading "fe80::" part from the IPv6 address
+          ipv6_address=$(echo "$ipv6_address" | sed 's/fe80::.*//')
+
           make_permanent "$tunnel_to_permanent" "$remote_ip" "$local_ip" "$ipv6_address"
           print_color "34" "Configuration for $tunnel_to_permanent has been made permanent."
         else
@@ -220,7 +223,7 @@ while true; do
       ;;
 
     *)
-      print_color "31" "Invalid choice. Please enter a number between 1 and 6."
+      print_color "31" "Invalid option. Please enter a number between 1 and 6."
       ;;
   esac
 done
