@@ -15,35 +15,30 @@ print_color() {
 # Function to make configuration permanent using rc.local
 make_permanent() {
   local interface="$1"
+  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip\n\
+ip -6 addr add $ipv6_address dev $interface\n\
+ip link set $interface mtu 1480\n\
+ip link set $interface up"
 
-  # Get current tunnel settings
-  local local_ip remote_ip ipv6_address
-
-  local_ip=$(ip tunnel show "$interface" | grep -oP 'local \K[\d.]+')
-  remote_ip=$(ip tunnel show "$interface" | grep -oP 'remote \K[\d.]+')
-  ipv6_address=$(ip -6 addr show dev "$interface" | grep -oP 'inet6 \K[^\s/]+')
-
-  if [ -z "$local_ip" ] || [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
-    print_color "$COLOR_RED" "Failed to retrieve tunnel details for $interface."
-    return 1
-  fi
-
-  # Add commands to rc.local
+  # Check if /etc/rc.local exists and is executable
   local rc_local="/etc/rc.local"
 
+  if [ ! -f "$rc_local" ]; then
+    print_color "$COLOR_RED" "$rc_local does not exist. Creating it."
+    sudo tee "$rc_local" > /dev/null <<EOF
+#!/bin/sh -e
+EOF
+    sudo chmod +x "$rc_local"
+  fi
+
+  # Append commands to /etc/rc.local
   if ! grep -q "$interface" "$rc_local"; then
     print_color "$COLOR_GREEN" "Adding configuration to $rc_local"
 
-    # Ensure rc.local is executable
-    sudo chmod +x "$rc_local"
-
-    # Append the configuration commands to rc.local
     sudo tee -a "$rc_local" > /dev/null <<EOF
+
 # Tunnel setup for $interface
-ip tunnel add $interface mode sit remote $remote_ip local $local_ip
-ip -6 addr add $ipv6_address dev $interface
-ip link set $interface mtu 1480
-ip link set $interface up
+$setup_cmds
 EOF
   else
     print_color "$COLOR_YELLOW" "$rc_local already contains configuration for $interface."
@@ -54,11 +49,11 @@ EOF
 remove_tunnel() {
   local tunnel_name="$1"
   local distro="$2"
-  
+
   if interface_exists "$tunnel_name"; then
     print_color "$COLOR_YELLOW" "Are you sure you want to delete the tunnel $tunnel_name? (y/n)"
     read -p "Enter your choice: " confirm_choice
-    
+
     if [[ "$confirm_choice" =~ ^[Yy]$ ]]; then
       ip tunnel del "$tunnel_name"
       print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been deleted."
@@ -238,17 +233,10 @@ while true; do
       else
         print_color "$COLOR_BLUE" "Available tunnels:"
         echo "$tunnels"
-        read -p "Enter the name of the tunnel to make permanent: " tunnel_to_make_permanent
-
-        if interface_exists "$tunnel_to_make_permanent"; then
-          make_permanent "$tunnel_to_make_permanent"
-          print_color "$COLOR_BLUE" "Configuration for $tunnel_to_make_permanent has been made permanent."
-        else
-          print_color "$COLOR_RED" "Tunnel $tunnel_to_make_permanent does not exist."
-        fi
+        read -p "Enter the name of the tunnel to make permanent: " tunnel_to_permanent
+        make_permanent "$tunnel_to_permanent"
       fi
       ;;
-
 
     6)
       print_color "$COLOR_GREEN" "Exiting."
@@ -256,7 +244,7 @@ while true; do
       ;;
 
     *)
-      print_color "$COLOR_RED" "Invalid option. Please enter a number between 1 and 6."
+      print_color "$COLOR_RED" "Invalid choice. Please enter a number between 1 and 6."
       ;;
   esac
 done
