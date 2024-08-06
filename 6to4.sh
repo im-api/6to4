@@ -139,6 +139,9 @@ EOF
 #!/bin/bash
 EOF
     sudo chmod +x "$rc_local"
+  else
+    # Ensure /etc/rc.local is executable
+    sudo chmod +x "$rc_local"
   fi
 
   # Ensure proper format for /etc/rc.local
