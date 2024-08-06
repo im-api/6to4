@@ -16,22 +16,16 @@ print_color() {
 ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
-  # Check if /etc/rc.local exists
-  if [ -f "$rc_local" ]; then
-    # Ensure shebang is at the top
-    if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
-      print_color "31" "Adding shebang to $rc_local."
-      sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
-    fi
+  # Ensure shebang is at the top
+  if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
+    print_color "31" "Adding shebang to $rc_local."
+    sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
+  fi
 
-    # Remove existing exit 0 if present, then re-add it
-    sudo sed -i '/^exit 0$/d' "$rc_local"
-
-    # Ensure exit 0 is at the end
-    if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
-      print_color "31" "Appending exit 0 to $rc_local."
-      echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
-    fi
+  # Ensure exit 0 is at the end
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+    print_color "31" "Appending exit 0 to $rc_local."
+    echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
   fi
 }
 
@@ -62,18 +56,14 @@ EOF
   # Ensure proper format for /etc/rc.local
   ensure_rc_local_format
 
-  # Append commands to /etc/rc.local
-  if ! grep -q "$interface" "$rc_local"; then
-    print_color "32" "Adding configuration to $rc_local"
+  # Remove existing configuration for the interface from /etc/rc.local
+  sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
 
-    # Add configuration while preserving shebang and exit 0
-    sudo sed -i "/^exit 0$/i\\
-\\
-# Tunnel setup for $interface\\
-$setup_cmds" "$rc_local"
-  else
-    print_color "33" "$rc_local already contains configuration for $interface."
-  fi
+  # Append new configuration before `exit 0`
+  local tmp_rc_local=$(mktemp)
+  awk '/^exit 0$/{print FILENAME " configured before exit 0"; exit 0}' "$rc_local" > "$tmp_rc_local"
+  echo -e "# Tunnel setup for $interface\n$setup_cmds" | cat - "$tmp_rc_local" > "$rc_local"
+  rm "$tmp_rc_local"
 
   # Re-check format after modifications
   ensure_rc_local_format
@@ -93,10 +83,8 @@ remove_tunnel() {
 
       # Remove from rc.local
       local rc_local="/etc/rc.local"
-      sudo sed -i "/ip tunnel add $tunnel_name/d" "$rc_local"
-      sudo sed -i "/ip -6 addr add .* dev $tunnel_name/d" "$rc_local"
-      sudo sed -i "/ip link set $tunnel_name mtu 1480/d" "$rc_local"
-      sudo sed -i "/ip link set $tunnel_name up/d" "$rc_local"
+      sudo sed -i "/^# Tunnel setup for $tunnel_name$/,+4d" "$rc_local"
+      sudo sed -i '/^exit 0$/d' "$rc_local"
 
       # Ensure proper format for /etc/rc.local
       ensure_rc_local_format
