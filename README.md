@@ -31,6 +31,7 @@
 
 ```bash
 bash <(curl -H 'Cache-Control: no-cache' -sSL "https://raw.githubusercontent.com/im-api/6to4/main/6to4.sh?$(date +%s)" --ipv4)
+```
 3. گزینه‌های منو
 هنگام اجرای اسکریپت، منویی با گزینه‌های زیر خواهید دید:
 
