@@ -31,12 +31,12 @@ make_permanent() {
   if [ ! -f "$rc_local" ]; then
     print_color "31" "$rc_local does not exist. Creating it."
     sudo tee "$rc_local" > /dev/null <<EOF
-#!/bin/sh -e
+#!/bin/bash
 EOF
     sudo chmod +x "$rc_local"
   fi
 
-  # Ensure rc.local ends with exit 0
+  # Ensure /etc/rc.local ends with exit 0
   if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
     print_color "31" "Appending exit 0 to $rc_local."
     echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
@@ -128,12 +128,12 @@ EOF
   if [ ! -f "$rc_local" ]; then
     print_color "31" "$rc_local does not exist. Creating it."
     sudo tee "$rc_local" > /dev/null <<EOF
-#!/bin/sh -e
+#!/bin/bash
 EOF
     sudo chmod +x "$rc_local"
   fi
 
-  # Ensure rc.local ends with exit 0
+  # Ensure /etc/rc.local ends with exit 0
   if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
     print_color "31" "Appending exit 0 to $rc_local."
     echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
