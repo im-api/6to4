@@ -1,7 +1,3 @@
-Here’s the updated README.md file incorporating the new download method:
-
-markdown
-Copy code
 # Tunnel Management Script
 
 This script provides functionality to manage 6to4 tunnels on a Linux system. It supports creating, listing, and removing tunnels, as well as making tunnel configurations permanent and configuring the `rc-local` service for system startup.
