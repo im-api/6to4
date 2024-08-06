@@ -101,6 +101,7 @@ else
   distro="unknown"
 fi
 
+
 # Define color codes
 COLOR_GREEN="32"
 COLOR_RED="31"
