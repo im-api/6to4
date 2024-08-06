@@ -12,6 +12,25 @@ print_color() {
   echo -e "\e[${color}m${message}\e[0m"
 }
 
+# Function to ensure the correct shebang and exit 0 in /etc/rc.local
+ensure_rc_local_format() {
+  local rc_local="/etc/rc.local"
+
+  if [ -f "$rc_local" ]; then
+    # Ensure shebang is at the top
+    if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
+      print_color "31" "Adding shebang to $rc_local."
+      sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
+    fi
+
+    # Ensure exit 0 is at the end
+    if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
+      print_color "31" "Appending exit 0 to $rc_local."
+      echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
+    fi
+  fi
+}
+
 # Function to make configuration permanent using rc.local
 make_permanent() {
   local interface="$1"
@@ -36,11 +55,8 @@ EOF
     sudo chmod +x "$rc_local"
   fi
 
-  # Ensure /etc/rc.local ends with exit 0
-  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
-    print_color "31" "Appending exit 0 to $rc_local."
-    echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
-  fi
+  # Ensure proper format for /etc/rc.local
+  ensure_rc_local_format
 
   # Append commands to /etc/rc.local
   if ! grep -q "$interface" "$rc_local"; then
@@ -75,11 +91,8 @@ remove_tunnel() {
       sudo sed -i "/ip link set $tunnel_name mtu 1480/d" "$rc_local"
       sudo sed -i "/ip link set $tunnel_name up/d" "$rc_local"
 
-      # Ensure rc.local ends with exit 0
-      if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
-        print_color "31" "Appending exit 0 to $rc_local."
-        echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
-      fi
+      # Ensure proper format for /etc/rc.local
+      ensure_rc_local_format
 
       print_color "32" "Tunnel $tunnel_name has been removed from $rc_local."
     else
@@ -122,7 +135,7 @@ WantedBy=multi-user.target
 EOF
   fi
 
-  # Make /etc/rc.local executable
+  # Ensure /etc/rc.local exists and is executable
   local rc_local="/etc/rc.local"
 
   if [ ! -f "$rc_local" ]; then
@@ -133,11 +146,8 @@ EOF
     sudo chmod +x "$rc_local"
   fi
 
-  # Ensure /etc/rc.local ends with exit 0
-  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
-    print_color "31" "Appending exit 0 to $rc_local."
-    echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
-  fi
+  # Ensure proper format for /etc/rc.local
+  ensure_rc_local_format
 
   # Reload systemd and enable the service
   sudo systemctl daemon-reload
