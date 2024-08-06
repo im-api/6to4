@@ -12,64 +12,21 @@ print_color() {
   echo -e "\e[${color}m${message}\e[0m"
 }
 
+# Function to ensure /etc/rc.local has correct shebang and exit 0
 ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
   # Ensure shebang is at the top
   if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
     print_color "31" "Adding shebang to $rc_local."
-    sudo sed -i '1i#!/bin/bash' "$rc_local"
+    sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
   fi
 
   # Ensure exit 0 is at the end
-  if ! tail -n 1 "$rc_local" | grep -q '^exit 0$'; then
+  if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
     print_color "31" "Appending exit 0 to $rc_local."
     echo "exit 0" | sudo tee -a "$rc_local" > /dev/null
   fi
-
-  # Make sure the file is executable
-  sudo chmod +x "$rc_local"
-}
-
-# Function to ensure /etc/rc.local has correct shebang and exit 0
-make_permanent() {
-  local interface="$1"
-  local remote_ip="$2"
-  local local_ip="$3"
-  local ipv6_address="$4"
-
-  # Commands to add to /etc/rc.local
-  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
-ip -6 addr add $ipv6_address dev $interface
-ip link set $interface mtu 1480
-ip link set $interface up"
-
-  # Check if /etc/rc.local exists and is executable
-  local rc_local="/etc/rc.local"
-
-  if [ ! -f "$rc_local" ]; then
-    print_color "31" "$rc_local does not exist. Creating it."
-    sudo tee "$rc_local" > /dev/null <<EOF
-#!/bin/bash
-exit 0
-EOF
-    sudo chmod +x "$rc_local"
-  fi
-
-  # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
-
-  # Remove existing configuration for the interface from /etc/rc.local
-  sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
-
-  # Append new configuration before `exit 0`
-  sudo sed -i "/^exit 0$/i # Tunnel setup for $interface\n$(echo "$setup_cmds" | sed 's/\//\\\//g')\n" "$rc_local"
-
-  # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
-
-  # Configure the rc-local service
-  configure_rc_local_service
 }
 
 # Function to create and configure rc-local service
@@ -80,16 +37,16 @@ configure_rc_local_service() {
 
   # Check if the service file exists and attempt to start the service
   if [ -f "$service_file" ]; then
-    print_color "36" "Attempting to restart rc-local service..."
+    print_color "36" "Attempting to start rc-local service..."
     sudo systemctl restart rc-local
+    sleep 2 # Give it a moment to process
 
-    # Check if service restart was successful
-    if ! systemctl is-active --quiet rc-local; then
-      print_color "31" "rc-local service failed to restart. Removing existing service file."
-      sudo rm -f "$service_file"
-    else
-      print_color "32" "rc-local service is already running."
+    if systemctl is-active --quiet rc-local; then
+      print_color "32" "rc-local service started successfully."
       return
+    else
+      print_color "31" "rc-local service failed to start. Removing existing service file."
+      sudo rm -f "$service_file"
     fi
   fi
 
@@ -117,7 +74,6 @@ EOF
     print_color "31" "$rc_local does not exist. Creating it."
     sudo tee "$rc_local" > /dev/null <<EOF
 #!/bin/bash
-exit 0
 EOF
     sudo chmod +x "$rc_local"
   fi
@@ -126,20 +82,55 @@ EOF
   ensure_rc_local_format
 
   # Reload systemd and enable the service
-  print_color "36" "Reloading systemd and enabling rc-local service..."
   sudo systemctl daemon-reload
   sudo systemctl enable rc-local
-
-  # Attempt to start the service
-  print_color "36" "Starting rc-local service..."
-  if ! sudo systemctl start rc-local; then
-    print_color "31" "Failed to start rc-local service."
-    sudo systemctl status rc-local
-    exit 1
-  fi
+  sudo systemctl start rc-local
 
   # Check service status
   sudo systemctl status rc-local
+}
+
+# Function to make configuration permanent using rc.local
+make_permanent() {
+  local interface="$1"
+  local remote_ip="$2"
+  local local_ip="$3"
+  local ipv6_address="$4"
+
+  # Commands to add to /etc/rc.local
+  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
+ ip -6 addr add $ipv6_address dev $interface
+ ip link set $interface mtu 1480
+ ip link set $interface up"
+
+  # Check if /etc/rc.local exists and is executable
+  local rc_local="/etc/rc.local"
+
+  if [ ! -f "$rc_local" ]; then
+    print_color "31" "$rc_local does not exist. Creating it."
+    sudo tee "$rc_local" > /dev/null <<EOF
+#!/bin/bash
+EOF
+    sudo chmod +x "$rc_local"
+  fi
+
+  # Ensure proper format for /etc/rc.local
+  ensure_rc_local_format
+
+  # Remove existing configuration for the interface from /etc/rc.local
+  sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
+
+  # Append new configuration before `exit 0`
+  local tmp_rc_local=$(mktemp)
+  awk '/^exit 0$/{print FILENAME " configured before exit 0"; exit 0}' "$rc_local" > "$tmp_rc_local"
+  echo -e "# Tunnel setup for $interface\n$setup_cmds" | cat - "$tmp_rc_local" > "$rc_local"
+  rm "$tmp_rc_local"
+
+  # Re-check format after modifications
+  ensure_rc_local_format
+
+  # Configure the rc-local service
+  configure_rc_local_service
 }
 
 # Function to remove a tunnel
@@ -157,6 +148,7 @@ remove_tunnel() {
       # Remove from rc.local
       local rc_local="/etc/rc.local"
       sudo sed -i "/^# Tunnel setup for $tunnel_name$/,+4d" "$rc_local"
+      sudo sed -i '/^exit 0$/d' "$rc_local"
 
       # Ensure proper format for /etc/rc.local
       ensure_rc_local_format
@@ -199,16 +191,8 @@ while true; do
   case $main_choice in
     1|2)
       # Common questions
-      if [ "$main_choice" -eq 1 ]; then
-        print_color "34" "You selected Iran. The first IP will be remote, and the second will be local."
-        read -p "Enter the remote IPv4 address: " remote_ip
-        read -p "Enter the local IPv4 address: " local_ip
-      else
-        print_color "34" "You selected Kharej. The first IP will be local, and the second will be remote."
-        read -p "Enter the local IPv4 address: " local_ip
-        read -p "Enter the remote IPv4 address: " remote_ip
-      fi
-
+      read -p "Enter the local IPv4 address: " local_ip
+      read -p "Enter the remote IPv4 address: " remote_ip
       read -p "Enter the base IPv6 address (e.g., fdcc:c4da:bc9b::): " base_ipv6
 
       # Validate base IPv6 address
@@ -241,67 +225,94 @@ while true; do
       # Add IPv6 address
       print_color "32" "Adding IPv6 address $ipv6_address to $interface"
       if ! ip -6 addr add "$ipv6_address" dev "$interface"; then
-        print_color "31" "Failed to add IPv6 address $ipv6_address."
-        ip tunnel del "$interface"
+        print_color "31" "Failed to add IPv6 address to $interface."
         exit 1
       fi
 
-      # Set MTU and bring the interface up
-      print_color "32" "Setting MTU and bringing up the interface."
-      if ! ip link set "$interface" mtu 1480 && ip link set "$interface" up; then
-        print_color "31" "Failed to configure the interface $interface."
-        ip -6 addr del "$ipv6_address" dev "$interface"
-        ip tunnel del "$interface"
+      # Configure MTU and bring up the interface
+      print_color "32" "Setting MTU and bringing up $interface"
+      if ! ip link set "$interface" mtu 1480; then
+        print_color "31" "Failed to set MTU for $interface."
         exit 1
       fi
 
-      # Make the tunnel permanent
-      make_permanent "$interface" "$remote_ip" "$local_ip" "$ipv6_address"
+      if ! ip link set "$interface" up; then
+        print_color "31" "Failed to bring up $interface."
+        exit 1
+      fi
+
+      print_color "34" "Tunnel $interface has been set up with IPv6 address $ipv6_address."
+
+      # Ask if the user wants to make the configuration permanent
+      read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
+
+      if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
+        make_permanent "$interface" "$remote_ip" "$local_ip" "$ipv6_address"
+        print_color "34" "Configuration has been made permanent."
+      else
+        print_color "33" "Configuration has not been made permanent."
+      fi
       ;;
+
     3)
       list_tunnels
       ;;
+
     4)
-      read -p "Enter the name of the tunnel to remove: " tunnel_name
-      remove_tunnel "$tunnel_name"
-      ;;
-    5)
-      # List tunnels before asking for tunnel name
       tunnels=$(list_tunnels)
       if [ -z "$tunnels" ]; then
         print_color "31" "No tunnels found."
-        continue
+      else
+        print_color "34" "Available tunnels:"
+        echo "$tunnels"
+        read -p "Enter the name of the tunnel to remove: " tunnel_to_remove
+        remove_tunnel "$tunnel_to_remove"
       fi
-
-      print_color "34" "Available tunnels:"
-      echo "$tunnels"
-      read -p "Enter the name of the tunnel to make permanent: " tunnel_name
-
-      if ! interface_exists "$tunnel_name"; then
-        print_color "31" "Tunnel $tunnel_name does not exist."
-        continue
-      fi
-
-      # Retrieve existing tunnel details
-      remote_ip=$(ip tunnel show "$tunnel_name" | grep 'remote' | awk '{print $2}')
-      local_ip=$(ip tunnel show "$tunnel_name" | grep 'local' | awk '{print $2}')
-      ipv6_address=$(ip -6 addr show dev "$tunnel_name" | grep 'inet6' | awk '{print $2}')
-
-      if [ -z "$remote_ip" ] || [ -z "$local_ip" ] || [ -z "$ipv6_address" ]; then
-        print_color "31" "Could not retrieve tunnel details."
-        continue
-      fi
-
-      make_permanent "$tunnel_name" "$remote_ip" "$local_ip" "$ipv6_address"
       ;;
+
+    5)
+      tunnels=$(list_tunnels)
+      if [ -z "$tunnels" ]; then
+        print_color "31" "No tunnels found."
+      else
+        print_color "34" "Available tunnels:"
+        echo "$tunnels"
+        read -p "Enter the name of the tunnel to make permanent: " tunnel_to_permanent
+
+        # Extract configuration details for the chosen tunnel
+        if interface_exists "$tunnel_to_permanent"; then
+          remote_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'remote' | awk '{print $4}')
+          local_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'local' | awk '{print $6}')
+          ipv6_address=$(ip -6 addr show dev "$tunnel_to_permanent" | grep 'inet6' | awk '{print $2}')
+
+          # Ensure extracted values are not empty
+          if [ -z "$remote_ip" ] || [ -z "$local_ip" ] || [ -z "$ipv6_address" ]; then
+            print_color "31" "Unable to retrieve complete configuration for $tunnel_to_permanent."
+            exit 1
+          fi
+
+          # Remove the leading "fe80::" part from the IPv6 address
+          ipv6_address=$(echo "$ipv6_address" | sed 's/fe80::.*//')
+
+          make_permanent "$tunnel_to_permanent" "$remote_ip" "$local_ip" "$ipv6_address"
+          print_color "34" "Configuration for $tunnel_to_permanent has been made permanent."
+        else
+          print_color "31" "Tunnel $tunnel_to_permanent does not exist."
+        fi
+      fi
+      ;;
+
     6)
       configure_rc_local_service
       ;;
+
     7)
+      print_color "32" "Exiting..."
       exit 0
       ;;
+
     *)
-      print_color "31" "Invalid choice. Please enter a number between 1 and 7."
+      print_color "31" "Invalid option. Please enter a number between 1 and 7."
       ;;
   esac
 done
