@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Directory to store tunnel scripts
+TUNNEL_DIR="$HOME/root/tunnels"
+
+# Create the directory if it doesn't exist
+mkdir -p "$TUNNEL_DIR"
+
 # Function to check if an interface already exists
 interface_exists() {
   ip link show | grep -q "$1"
@@ -12,40 +18,90 @@ print_color() {
   echo -e "\e[${color}m${message}\e[0m"
 }
 
+# Function to create a script file for a tunnel
+create_tunnel_script() {
+  local interface="$1"
+  local local_ip="$2"
+  local remote_ip="$3"
+  local ipv6_address="$4"
+
+  local script_file="$TUNNEL_DIR/${interface}.sh"
+
+  echo "#!/bin/bash" | sudo tee "$script_file" > /dev/null
+  echo "ip tunnel add $interface mode sit remote $remote_ip local $local_ip" | sudo tee -a "$script_file" > /dev/null
+  echo "ip -6 addr add $ipv6_address dev $interface" | sudo tee -a "$script_file" > /dev/null
+  echo "ip link set $interface mtu 1480" | sudo tee -a "$script_file" > /dev/null
+  echo "ip link set $interface up" | sudo tee -a "$script_file" > /dev/null
+
+  sudo chmod +x "$script_file"
+}
+
 # Function to make configuration permanent
 make_permanent() {
-  local distro="$1"
-  local interface="$2"
-  local local_ip="$3"
-  local remote_ip="$4"
-  local ipv6_address="$5"
+  local interface="$1"
+  local local_ip="$2"
+  local remote_ip="$3"
+  local ipv6_address="$4"
 
-  if [ "$distro" == "ubuntu" ]; then
-    local netplan_config="/etc/netplan/01-netcfg.yaml"
+  create_tunnel_script "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
 
-    # Create or update the Netplan configuration file
-    echo "network:
-      version: 2
-      ethernets:
-        ${interface}:
-          addresses:
-            - ${ipv6_address}
-          routes:
-            - to: ${remote_ip}
-              via: ${local_ip}
-              on-link: true
-    " | sudo tee "$netplan_config" > /dev/null
+  # Create or update systemd service
+  if [ ! -f /etc/systemd/system/tunnel-setup.service ]; then
+    sudo bash -c "cat > /etc/systemd/system/tunnel-setup.service <<EOF
+[Unit]
+Description=Set up tunnel interfaces
 
-    # Fix file permissions
-    sudo chmod 600 "$netplan_config"
-    sudo chown root:root "$netplan_config"
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tunnel-setup.sh
 
-    # Apply the Netplan configuration
-    sudo netplan generate
-    sudo netplan apply
-  else
-    print_color "$COLOR_RED" "Unsupported distribution for permanent configuration."
+[Install]
+WantedBy=multi-user.target
+EOF"
+    sudo touch /usr/local/bin/tunnel-setup.sh
+    sudo chmod +x /usr/local/bin/tunnel-setup.sh
   fi
+
+  # Add all tunnel scripts to the service script
+  {
+    echo "#!/bin/bash"
+    for script in "$TUNNEL_DIR"/*.sh; do
+      [ -x "$script" ] && echo "$script"
+    done
+  } | sudo tee /usr/local/bin/tunnel-setup.sh > /dev/null
+
+  sudo chmod +x /usr/local/bin/tunnel-setup.sh
+
+  # Reload and enable the service
+  sudo systemctl daemon-reload
+  sudo systemctl enable tunnel-setup.service
+
+  print_color "$COLOR_BLUE" "Tunnel configuration has been made permanent."
+}
+
+# Function to remove a tunnel script
+remove_tunnel_script() {
+  local interface="$1"
+
+  local script_file="$TUNNEL_DIR/${interface}.sh"
+
+  if [ -f "$script_file" ]; then
+    sudo rm "$script_file"
+    print_color "$COLOR_GREEN" "Removed script for tunnel $interface."
+  else
+    print_color "$COLOR_RED" "Script for tunnel $interface not found."
+  fi
+
+  # Update the systemd service file
+  {
+    echo "#!/bin/bash"
+    for script in "$TUNNEL_DIR"/*.sh; do
+      [ -x "$script" ] && echo "$script"
+    done
+  } | sudo tee /usr/local/bin/tunnel-setup.sh > /dev/null
+
+  sudo chmod +x /usr/local/bin/tunnel-setup.sh
+  sudo systemctl daemon-reload
 }
 
 # Function to list all 6to4 tunnels
@@ -66,6 +122,8 @@ remove_tunnel() {
     if [[ "$confirm_choice" =~ ^[Yy]$ ]]; then
       ip tunnel del "$tunnel_name"
       print_color "$COLOR_GREEN" "Tunnel $tunnel_name has been deleted."
+
+      remove_tunnel_script "$tunnel_name"
 
       if [[ "$distro" == "ubuntu" ]]; then
         # Remove from Netplan or /etc/network/interfaces
@@ -115,8 +173,9 @@ while true; do
   print_color "$COLOR_CYAN" "2. Kharej"
   print_color "$COLOR_CYAN" "3. List tunnels"
   print_color "$COLOR_CYAN" "4. Remove tunnel"
-  print_color "$COLOR_CYAN" "5. Exit"
-  read -p "Enter your choice (1-5): " main_choice
+  print_color "$COLOR_CYAN" "5. Make permanent"
+  print_color "$COLOR_CYAN" "6. Exit"
+  read -p "Enter your choice (1-6): " main_choice
 
   case $main_choice in
     1|2)
@@ -213,12 +272,8 @@ while true; do
 
       # Ask if the user wants to make the configuration permanent
       read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
-
       if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
-        make_permanent "$distro" "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
-        print_color "$COLOR_BLUE" "Configuration has been made permanent."
-      else
-        print_color "$COLOR_YELLOW" "Configuration has not been made permanent."
+        make_permanent "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
       fi
       ;;
 
@@ -227,24 +282,34 @@ while true; do
       ;;
 
     4)
-      tunnels=$(list_tunnels)
-      if [ -z "$tunnels" ]; then
-        print_color "$COLOR_RED" "No tunnels found."
-      else
-        print_color "$COLOR_BLUE" "Available tunnels:"
-        echo "$tunnels"
-        read -p "Enter the name of the tunnel to remove: " tunnel_to_remove
-        remove_tunnel "$tunnel_to_remove" "$distro"
-      fi
+      read -p "Enter the name of the tunnel to remove: " tunnel_name
+      remove_tunnel "$tunnel_name" "$distro"
       ;;
 
     5)
+      list_tunnels
+      read -p "Enter the name of the tunnel to make permanent: " tunnel_name
+
+      # Retrieve tunnel details
+      local_ip=$(ip -o addr show dev "$tunnel_name" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+      remote_ip=$(ip -o tunnel show "$tunnel_name" | awk '{print $4}')
+      ipv6_address=$(ip -6 addr show dev "$tunnel_name" | grep -oP '(?<=inet6\s)[^/]+')
+
+      if [ -z "$local_ip" ] || [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
+        print_color "$COLOR_RED" "Failed to retrieve tunnel details."
+        exit 1
+      fi
+
+      make_permanent "$tunnel_name" "$local_ip" "$remote_ip" "$ipv6_address"
+      ;;
+
+    6)
       print_color "$COLOR_GREEN" "Exiting."
       exit 0
       ;;
 
     *)
-      print_color "$COLOR_RED" "Invalid option. Please enter a number between 1 and 5."
+      print_color "$COLOR_RED" "Invalid choice. Please enter a number between 1 and 6."
       ;;
   esac
 done
