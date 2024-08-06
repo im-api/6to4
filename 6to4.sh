@@ -84,18 +84,74 @@ list_tunnels() {
   ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
 }
 
-# Function to enable rc-local service manually
-enable_rc_local() {
-  print_color "36" "Enabling rc-local service manually..."
-  # Check if systemd service file exists
-  if [ -f /etc/systemd/system/rc-local.service ]; then
-    sudo systemctl daemon-reload
-    sudo systemctl enable rc-local
-    sudo systemctl start rc-local
-    print_color "32" "rc-local service has been enabled and started."
-  else
-    print_color "31" "rc-local service file not found. Please ensure it exists at /etc/systemd/system/rc-local.service."
+# Function to create and configure rc-local service
+configure_rc_local_service() {
+  local service_file="/etc/systemd/system/rc-local.service"
+
+  print_color "36" "Creating and configuring rc-local service..."
+
+  # Create the service file if it doesn't exist
+  if [ ! -f "$service_file" ]; then
+    print_color "31" "$service_file does not exist. Creating it."
+    sudo tee "$service_file" > /dev/null <<EOF
+[Unit]
+Description=/etc/rc.local Compatibility
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/etc/rc.local start
+TimeoutSec=0
+RemainAfterExit=yes
+GuessMainPID=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
   fi
+
+  # Make /etc/rc.local executable and add tunnel commands
+  local rc_local="/etc/rc.local"
+
+  if [ ! -f "$rc_local" ]; then
+    print_color "31" "$rc_local does not exist. Creating it."
+    sudo tee "$rc_local" > /dev/null <<EOF
+#!/bin/sh -e
+EOF
+    sudo chmod +x "$rc_local"
+  fi
+
+  # Append example tunnel setup commands if needed
+  if ! grep -q "6to4_To_KH_3862" "$rc_local"; then
+    print_color "32" "Adding example tunnel setup commands to $rc_local"
+
+    sudo tee -a "$rc_local" > /dev/null <<EOF
+
+# Tunnel setup for 6to4_To_KH_3862
+ip tunnel add 6to4_To_KH_3862 mode sit remote 5.75.209.216 local 185.58.241.203
+ip -6 addr add fd49:9189:885::3862/64 dev 6to4_To_KH_3862
+ip link set 6to4_To_KH_3862 mtu 1480
+ip link set 6to4_To_KH_3862 up
+
+# Tunnel setup for 6to4_tun__6846
+ip tunnel add 6to4_tun__6846 mode sit remote 91.107.174.140 local 185.58.241.203
+ip -6 addr add fd26:7c34:8b44::6846/64 dev 6to4_tun__6846
+ip link set 6to4_tun__6846 mtu 1480
+ip link set 6to4_tun__6846 up
+
+EOF
+  fi
+
+  # Make rc.local executable
+  sudo chmod +x "$rc_local"
+
+  # Reload systemd and enable the service
+  sudo systemctl daemon-reload
+  sudo systemctl enable rc-local
+  sudo systemctl start rc-local
+
+  # Check service status
+  sudo systemctl status rc-local
 }
 
 # Detect distribution
@@ -114,7 +170,7 @@ while true; do
   print_color "36" "3. List tunnels"
   print_color "36" "4. Remove tunnel"
   print_color "36" "5. Make tunnel permanent"
-  print_color "36" "6. Enable rc-local Service Manually"
+  print_color "36" "6. Configure rc-local service"
   print_color "36" "7. Exit"
   read -p "Enter your choice (1-7): " main_choice
 
@@ -233,7 +289,7 @@ while true; do
       ;;
 
     6)
-      enable_rc_local
+      configure_rc_local_service
       ;;
 
     7)
