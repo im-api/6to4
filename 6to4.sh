@@ -39,9 +39,17 @@ create_tunnel_script() {
 # Function to make configuration permanent
 make_permanent() {
   local interface="$1"
-  local local_ip="$2"
-  local remote_ip="$3"
-  local ipv6_address="$4"
+
+  # Get tunnel details
+  local local_ip=$(ip -o addr show dev "$interface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+  local remote_ip=$(ip -o tunnel show "$interface" | awk '{print $4}')
+  local ipv6_address=$(ip -6 addr show dev "$interface" | grep -oP '(?<=inet6\s)[^/]+')
+
+  # Validate retrieved values
+  if [ -z "$local_ip" ] || [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
+    print_color "$COLOR_RED" "Failed to retrieve tunnel details. Ensure the tunnel exists and is properly configured."
+    return 1
+  fi
 
   create_tunnel_script "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
 
@@ -273,7 +281,7 @@ while true; do
       # Ask if the user wants to make the configuration permanent
       read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
       if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
-        make_permanent "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
+        make_permanent "$interface"
       fi
       ;;
 
@@ -289,18 +297,7 @@ while true; do
     5)
       list_tunnels
       read -p "Enter the name of the tunnel to make permanent: " tunnel_name
-
-      # Retrieve tunnel details
-      local_ip=$(ip -o addr show dev "$tunnel_name" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
-      remote_ip=$(ip -o tunnel show "$tunnel_name" | awk '{print $4}')
-      ipv6_address=$(ip -6 addr show dev "$tunnel_name" | grep -oP '(?<=inet6\s)[^/]+')
-
-      if [ -z "$local_ip" ] || [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
-        print_color "$COLOR_RED" "Failed to retrieve tunnel details."
-        exit 1
-      fi
-
-      make_permanent "$tunnel_name" "$local_ip" "$remote_ip" "$ipv6_address"
+      make_permanent "$tunnel_name"
       ;;
 
     6)
