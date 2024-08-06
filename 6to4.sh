@@ -84,6 +84,20 @@ list_tunnels() {
   ip -o link show | awk -F': ' '{print $2}' | sed 's/@NONE$//'
 }
 
+# Function to enable rc-local service manually
+enable_rc_local() {
+  print_color "36" "Enabling rc-local service manually..."
+  # Check if systemd service file exists
+  if [ -f /etc/systemd/system/rc-local.service ]; then
+    sudo systemctl daemon-reload
+    sudo systemctl enable rc-local
+    sudo systemctl start rc-local
+    print_color "32" "rc-local service has been enabled and started."
+  else
+    print_color "31" "rc-local service file not found. Please ensure it exists at /etc/systemd/system/rc-local.service."
+  fi
+}
+
 # Detect distribution
 if [ -f /etc/os-release ]; then
   . /etc/os-release
@@ -100,8 +114,9 @@ while true; do
   print_color "36" "3. List tunnels"
   print_color "36" "4. Remove tunnel"
   print_color "36" "5. Make tunnel permanent"
-  print_color "36" "6. Exit"
-  read -p "Enter your choice (1-6): " main_choice
+  print_color "36" "6. Enable rc-local Service Manually"
+  print_color "36" "7. Exit"
+  read -p "Enter your choice (1-7): " main_choice
 
   case $main_choice in
     1|2)
@@ -218,12 +233,16 @@ while true; do
       ;;
 
     6)
+      enable_rc_local
+      ;;
+
+    7)
       print_color "32" "Exiting..."
       exit 0
       ;;
 
     *)
-      print_color "31" "Invalid option. Please enter a number between 1 and 6."
+      print_color "31" "Invalid option. Please enter a number between 1 and 7."
       ;;
   esac
 done
