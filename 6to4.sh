@@ -265,6 +265,7 @@ while true; do
       list_tunnels
       ;;
     4)
+      tunnels=$(list_tunnels)
      if [ -z "$tunnels" ]; then
         print_color "31" "No tunnels found."
       else
