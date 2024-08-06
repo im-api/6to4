@@ -12,7 +12,7 @@ print_color() {
   echo -e "\e[${color}m${message}\e[0m"
 }
 
-# Function to ensure the correct shebang and exit 0 in /etc/rc.local
+# Function to ensure /etc/rc.local has correct shebang and exit 0
 ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
@@ -23,6 +23,9 @@ ensure_rc_local_format() {
       print_color "31" "Adding shebang to $rc_local."
       sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
     fi
+
+    # Remove existing exit 0 if present, then re-add it
+    sudo sed -i '/^exit 0$/d' "$rc_local"
 
     # Ensure exit 0 is at the end
     if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
@@ -63,14 +66,17 @@ EOF
   if ! grep -q "$interface" "$rc_local"; then
     print_color "32" "Adding configuration to $rc_local"
 
-    sudo tee -a "$rc_local" > /dev/null <<EOF
-
-# Tunnel setup for $interface
-$setup_cmds
-EOF
+    # Add configuration while preserving shebang and exit 0
+    sudo sed -i "/^exit 0$/i\\
+\\
+# Tunnel setup for $interface\\
+$setup_cmds" "$rc_local"
   else
     print_color "33" "$rc_local already contains configuration for $interface."
   fi
+
+  # Re-check format after modifications
+  ensure_rc_local_format
 }
 
 # Function to remove a tunnel
