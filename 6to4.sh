@@ -110,8 +110,7 @@ WantedBy=multi-user.target
 EOF
   fi
 
-
-  # Make /etc/rc.local executable and add tunnel commands
+  # Make /etc/rc.local executable
   local rc_local="/etc/rc.local"
 
   if [ ! -f "$rc_local" ]; then
@@ -120,17 +119,6 @@ EOF
 #!/bin/sh -e
 EOF
     sudo chmod +x "$rc_local"
-  fi
-
-  # Append example tunnel setup commands if needed
-  if ! grep -q "6to4_To_KH_3862" "$rc_local"; then
-    print_color "32" "Adding example tunnel setup commands to $rc_local"
-
-    sudo tee -a "$rc_local" > /dev/null <<EOF
-
-
-
-EOF
   fi
 
   # Make rc.local executable
