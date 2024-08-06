@@ -108,7 +108,7 @@ make_permanent() {
   local local_ip="$3"
   local ipv6_address="$4"
   # Configure the rc-local service
-  configure_rc_local_service
+  #configure_rc_local_service
   # Commands to add to /etc/rc.local
   local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
  ip -6 addr add $ipv6_address dev $interface
