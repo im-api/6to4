@@ -20,10 +20,10 @@ make_permanent() {
   local ipv6_address="$4"
 
   # Commands to add to /etc/rc.local
-  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip\n\
-ip -6 addr add $ipv6_address dev $interface\n\
-ip link set $interface mtu 1480\n\
-ip link set $interface up"
+  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
+ ip -6 addr add $ipv6_address dev $interface
+ ip link set $interface mtu 1480
+ ip link set $interface up"
 
   # Check if /etc/rc.local exists and is executable
   local rc_local="/etc/rc.local"
@@ -196,8 +196,8 @@ while true; do
 
         # Extract configuration details for the chosen tunnel
         if interface_exists "$tunnel_to_permanent"; then
-          remote_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'remote' | awk '{print $2}')
-          local_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'local' | awk '{print $2}')
+          remote_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'remote' | awk '{print $4}')
+          local_ip=$(ip tunnel show "$tunnel_to_permanent" | grep 'local' | awk '{print $6}')
           ipv6_address=$(ip -6 addr show dev "$tunnel_to_permanent" | grep 'inet6' | awk '{print $2}')
 
           # Ensure extracted values are not empty
