@@ -37,10 +37,7 @@ make_permanent() {
   local ipv6_address="$4"
 
   # Commands to add to /etc/rc.local
-  local setup_cmds="ip tunnel add $interface mode sit remote $remote_ip local $local_ip
-ip -6 addr add $ipv6_address dev $interface
-ip link set $interface mtu 1480
-ip link set $interface up"
+  local setup_cmds="# Tunnel setup for $interface\nip tunnel add $interface mode sit remote $remote_ip local $local_ip\nip -6 addr add $ipv6_address dev $interface\nip link set $interface mtu 1480\nip link set $interface up"
 
   # Check if /etc/rc.local exists and is executable
   local rc_local="/etc/rc.local"
@@ -56,26 +53,35 @@ EOF
   # Ensure proper format for /etc/rc.local
   ensure_rc_local_format
 
-  # Remove existing configuration for the interface from /etc/rc.local
-  sudo sed -i "/^# Tunnel setup for $interface$/,+4d" "$rc_local"
-
   # Create a temporary file for updating /etc/rc.local
   local tmp_rc_local=$(mktemp)
 
-  # Add new configuration before `exit 0`
+  # Flag to track if the setup for the interface is replaced
+  local replaced=0
+
   while IFS= read -r line; do
-    echo "$line" >> "$tmp_rc_local"
-    if [[ "$line" == "exit 0" ]]; then
-      echo "# Tunnel setup for $interface" >> "$tmp_rc_local"
+    if [[ "$line" == "# Tunnel setup for $interface" ]]; then
       echo "$setup_cmds" >> "$tmp_rc_local"
+      # Skip the next lines to avoid duplication
+      replaced=1
+      while IFS= read -r line && [[ "$line" != "exit 0" ]]; do
+        # Skip lines until `exit 0` is found
+        :
+      done
+      # Continue to read and write lines from original file
+      echo "exit 0" >> "$tmp_rc_local"
+    else
+      echo "$line" >> "$tmp_rc_local"
     fi
   done < "$rc_local"
 
-  # Append to the file if `exit 0` is not present
-  if ! grep -q '^exit 0$' "$rc_local"; then
+  # If not replaced, append new configuration and ensure `exit 0` is present
+  if [ "$replaced" -eq 0 ]; then
     echo "# Tunnel setup for $interface" >> "$tmp_rc_local"
     echo "$setup_cmds" >> "$tmp_rc_local"
-    echo "exit 0" >> "$tmp_rc_local"
+    if ! grep -q '^exit 0$' "$rc_local"; then
+      echo "exit 0" >> "$tmp_rc_local"
+    fi
   fi
 
   # Replace original /etc/rc.local with updated content
