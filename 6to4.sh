@@ -53,11 +53,14 @@ EOF
     sudo chmod +x "$rc_local"
   fi
 
-  # Ensure proper format for /etc/rc.local
-  ensure_rc_local_format
-
   # Remove existing configuration for the interface from /etc/rc.local
   sudo sed -i "/^# Tunnel setup for $interface$/,/^exit 0$/d" "$rc_local"
+
+  # Ensure only one shebang at the top
+  if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
+    print_color "31" "Adding shebang to $rc_local."
+    sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
+  fi
 
   # Ensure exit 0 is only at the end
   if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
@@ -73,6 +76,7 @@ EOF
   # Re-check format after modifications
   ensure_rc_local_format
 }
+
 
 # Function to remove a tunnel
 remove_tunnel() {
