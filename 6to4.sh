@@ -22,6 +22,12 @@ ensure_rc_local_format() {
     sudo sed -i '1s|^|#!/bin/bash\n|' "$rc_local"
   fi
 
+  # Ensure sleep 10 is at the start only once
+  if ! grep -q '^sleep 10' "$rc_local"; then
+    print_color "31" "Adding sleep 10 to $rc_local."
+    sudo sed -i '2s|^|sleep 10\n|' "$rc_local"
+  fi
+
   # Ensure exit 0 is at the end
   if ! tail -n 1 "$rc_local" | grep -q '^exit 0'; then
     print_color "31" "Appending exit 0 to $rc_local."
@@ -49,6 +55,7 @@ ip link set $interface up"
     print_color "31" "$rc_local does not exist. Creating it."
     sudo tee "$rc_local" > /dev/null <<EOF
 #!/bin/bash
+sleep 10
 EOF
     sudo chmod +x "$rc_local"
   fi
