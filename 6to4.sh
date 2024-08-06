@@ -15,9 +15,18 @@ print_color() {
 # Function to make configuration permanent using rc.local
 make_permanent() {
   local interface="$1"
-  local local_ip="$2"
-  local remote_ip="$3"
-  local ipv6_address="$4"
+
+  # Get current tunnel settings
+  local local_ip remote_ip ipv6_address
+
+  local_ip=$(ip tunnel show "$interface" | grep -oP 'local \K[\d.]+')
+  remote_ip=$(ip tunnel show "$interface" | grep -oP 'remote \K[\d.]+')
+  ipv6_address=$(ip -6 addr show dev "$interface" | grep -oP 'inet6 \K[^\s/]+')
+
+  if [ -z "$local_ip" ] || [ -z "$remote_ip" ] || [ -z "$ipv6_address" ]; then
+    print_color "$COLOR_RED" "Failed to retrieve tunnel details for $interface."
+    return 1
+  fi
 
   # Add commands to rc.local
   local rc_local="/etc/rc.local"
@@ -30,7 +39,7 @@ make_permanent() {
 
     # Append the configuration commands to rc.local
     sudo tee -a "$rc_local" > /dev/null <<EOF
-# Tunnel setup
+# Tunnel setup for $interface
 ip tunnel add $interface mode sit remote $remote_ip local $local_ip
 ip -6 addr add $ipv6_address dev $interface
 ip link set $interface mtu 1480
@@ -199,7 +208,7 @@ while true; do
       read -p "Do you want to make this configuration permanent? (y/n): " make_permanent_choice
 
       if [[ "$make_permanent_choice" =~ ^[Yy]$ ]]; then
-        make_permanent "$interface" "$local_ip" "$remote_ip" "$ipv6_address"
+        make_permanent "$interface"
         print_color "$COLOR_BLUE" "Configuration has been made permanent."
       else
         print_color "$COLOR_YELLOW" "Configuration has not been made permanent."
@@ -223,7 +232,6 @@ while true; do
       ;;
 
     5)
-      # Make tunnel permanent
       tunnels=$(list_tunnels)
       if [ -z "$tunnels" ]; then
         print_color "$COLOR_RED" "No tunnels found."
@@ -232,18 +240,8 @@ while true; do
         echo "$tunnels"
         read -p "Enter the name of the tunnel to make permanent: " tunnel_to_make_permanent
 
-        # Get tunnel details
         if interface_exists "$tunnel_to_make_permanent"; then
-          # This is a simplified approach. In a real-world scenario, you might need to retrieve details from a config file or another source.
-          read -p "Enter the local IPv4 address: " local_ip
-          read -p "Enter the remote IPv4 address: " remote_ip
-          read -p "Enter the base IPv6 address (e.g., fdcc:c4da:bc9b::): " base_ipv6
-
-          # Generate a dynamic suffix for the IPv6 address
-          suffix=$(printf '%04x' $((RANDOM % 65536)))
-          ipv6_address="${base_ipv6}${suffix}/64"
-
-          make_permanent "$tunnel_to_make_permanent" "$local_ip" "$remote_ip" "$ipv6_address"
+          make_permanent "$tunnel_to_make_permanent"
           print_color "$COLOR_BLUE" "Configuration for $tunnel_to_make_permanent has been made permanent."
         else
           print_color "$COLOR_RED" "Tunnel $tunnel_to_make_permanent does not exist."
