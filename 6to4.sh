@@ -16,6 +16,7 @@ print_color() {
 ensure_rc_local_format() {
   local rc_local="/etc/rc.local"
 
+  # Check if /etc/rc.local exists
   if [ -f "$rc_local" ]; then
     # Ensure shebang is at the top
     if ! head -n 1 "$rc_local" | grep -q '^#!/bin/bash'; then
