@@ -267,7 +267,7 @@ while true; do
     4)
       read -p "Enter the name of the tunnel to remove: " tunnel_name
       remove_tunnel "$tunnel_name"
-      ;;
+      ;; 
     5)
       tunnels=$(list_tunnels)
       if [ -z "$tunnels" ]; then
