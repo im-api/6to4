@@ -84,7 +84,6 @@ EOF
   ensure_rc_local_format
 }
 
-
 # Function to remove a tunnel
 remove_tunnel() {
   local tunnel_name="$1"
@@ -181,6 +180,48 @@ EOF
   sudo systemctl status rc-local
 }
 
+# Function to edit IPv4 addresses of an existing tunnel
+edit_ipv4_addresses() {
+  local tunnel_name="$1"
+  local new_remote_ip="$2"
+  local new_local_ip="$3"
+
+  # Update the tunnel configuration
+  if ! ip tunnel change "$tunnel_name" mode sit remote "$new_remote_ip" local "$new_local_ip"; then
+    print_color "31" "Failed to update tunnel $tunnel_name."
+    return 1
+  fi
+
+  print_color "32" "Tunnel $tunnel_name updated with new remote IP $new_remote_ip and local IP $new_local_ip."
+
+  # Update /etc/rc.local if the configuration is permanent
+  local rc_local="/etc/rc.local"
+  if grep -q "# Tunnel setup for $tunnel_name" "$rc_local"; then
+    sudo sed -i "/# Tunnel setup for $tunnel_name/,+4s/remote [0-9.]\+ local [0-9.]\+/remote $new_remote_ip local $new_local_ip/" "$rc_local"
+    print_color "32" "Updated permanent configuration in $rc_local."
+  fi
+
+  return 0
+}
+
+# New function to show data of a tunnel
+show_tunnel_data() {
+  local tunnel_name="$1"
+
+  if interface_exists "$tunnel_name"; then
+    local remote_ip=$(ip tunnel show "$tunnel_name" | grep 'remote' | awk '{print $4}')
+    local local_ip=$(ip tunnel show "$tunnel_name" | grep 'local' | awk '{print $6}')
+    local ipv6_address=$(ip -6 addr show dev "$tunnel_name" | grep 'inet6' | awk '{print $2}')
+
+    print_color "34" "Tunnel Data for $tunnel_name:"
+    print_color "32" "Remote IPv4: $remote_ip"
+    print_color "32" "Local IPv4: $local_ip"
+    print_color "32" "IPv6 Address: $ipv6_address"
+  else
+    print_color "31" "Tunnel $tunnel_name does not exist."
+  fi
+}
+
 # Detect distribution
 if [ -f /etc/os-release ]; then
   . /etc/os-release
@@ -198,8 +239,10 @@ while true; do
   print_color "36" "4. Remove tunnel"
   print_color "36" "5. Make tunnel permanent"
   print_color "36" "6. Configure rc-local service"
-  print_color "36" "7. Exit"
-  read -p "Enter your choice (1-7): " main_choice
+  print_color "36" "7. Edit IPv4 addresses of existing tunnel"
+  print_color "36" "8. Show data of a tunnel"
+  print_color "36" "9. Exit"
+  read -p "Enter your choice (1-9): " main_choice
 
   case $main_choice in
     1|2)
@@ -211,7 +254,7 @@ while true; do
       # Validate base IPv6 address
       if ! [[ $base_ipv6 =~ ^[0-9a-fA-F:]+::$ ]]; then
         print_color "31" "Invalid base IPv6 address format."
-        exit 1
+        continue
       fi
 
       # Generate a dynamic suffix for the IPv6 address and interface name
@@ -225,33 +268,33 @@ while true; do
 
       if interface_exists "$interface"; then
         print_color "31" "The interface name $interface is already in use. Please choose another name."
-        exit 1
+        continue
       fi
 
       # Create the tunnel
       print_color "32" "Creating tunnel $interface with remote $remote_ip and local $local_ip"
       if ! ip tunnel add "$interface" mode sit remote "$remote_ip" local "$local_ip"; then
         print_color "31" "Failed to create tunnel $interface."
-        exit 1
+        continue
       fi
 
       # Add IPv6 address
       print_color "32" "Adding IPv6 address $ipv6_address to $interface"
       if ! ip -6 addr add "$ipv6_address" dev "$interface"; then
         print_color "31" "Failed to add IPv6 address to $interface."
-        exit 1
+        continue
       fi
 
       # Configure MTU and bring up the interface
       print_color "32" "Setting MTU and bringing up $interface"
       if ! ip link set "$interface" mtu 1480; then
         print_color "31" "Failed to set MTU for $interface."
-        exit 1
+        continue
       fi
 
       if ! ip link set "$interface" up; then
         print_color "31" "Failed to bring up $interface."
-        exit 1
+        continue
       fi
 
       print_color "34" "Tunnel $interface has been set up with IPv6 address $ipv6_address."
@@ -301,11 +344,8 @@ while true; do
           # Ensure extracted values are not empty
           if [ -z "$remote_ip" ] || [ -z "$local_ip" ] || [ -z "$ipv6_address" ]; then
             print_color "31" "Unable to retrieve complete configuration for $tunnel_to_permanent."
-            exit 1
+            continue
           fi
-
-          # Remove the leading "fe80::" part from the IPv6 address
-          ipv6_address=$(echo "$ipv6_address" | sed 's/fe80::.*//')
 
           make_permanent "$tunnel_to_permanent" "$remote_ip" "$local_ip" "$ipv6_address"
           print_color "34" "Configuration for $tunnel_to_permanent has been made permanent."
@@ -320,12 +360,45 @@ while true; do
       ;;
 
     7)
+      tunnels=$(list_tunnels)
+      if [ -z "$tunnels" ]; then
+        print_color "31" "No tunnels found."
+      else
+        print_color "34" "Available tunnels:"
+        echo "$tunnels"
+        read -p "Enter the name of the tunnel to edit: " tunnel_to_edit
+
+        if interface_exists "$tunnel_to_edit"; then
+          read -p "Enter the new remote IPv4 address: " new_remote_ip
+          read -p "Enter the new local IPv4 address: " new_local_ip
+
+          edit_ipv4_addresses "$tunnel_to_edit" "$new_remote_ip" "$new_local_ip"
+        else
+          print_color "31" "Tunnel $tunnel_to_edit does not exist."
+        fi
+      fi
+      ;;
+
+    8)
+      tunnels=$(list_tunnels)
+      if [ -z "$tunnels" ]; then
+        print_color "31" "No tunnels found."
+      else
+        print_color "34" "Available tunnels:"
+        echo "$tunnels"
+        read -p "Enter the name of the tunnel to show data for: " tunnel_to_show
+
+        show_tunnel_data "$tunnel_to_show"
+      fi
+      ;;
+
+    9)
       print_color "32" "Exiting..."
       exit 0
       ;;
 
     *)
-      print_color "31" "Invalid option. Please enter a number between 1 and 7."
+      print_color "31" "Invalid option. Please enter a number between 1 and 9."
       ;;
   esac
 done
